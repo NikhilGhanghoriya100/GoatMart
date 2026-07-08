@@ -1,0 +1,6 @@
+import {NextRequest,NextResponse} from "next/server";
+import connectDB from "@/lib/db";
+import User from "@/models/User";
+import {getSession} from "@/lib/auth";
+export async function GET(){try{const session=await getSession();if(!session)return NextResponse.json({success:false,error:"Unauthorized"},{status:401});await connectDB();const user=await User.findById(session.user.id).select("-password").lean();if(!user)return NextResponse.json({success:false,error:"Not found"},{status:404});return NextResponse.json({success:true,data:user});}catch{return NextResponse.json({success:false,error:"Server error"},{status:500});}}
+export async function PATCH(req:NextRequest){try{const session=await getSession();if(!session)return NextResponse.json({success:false,error:"Unauthorized"},{status:401});await connectDB();const body=await req.json();const allowed=["name","phone","avatar","address"];const update:Record<string,unknown>={};for(const key of allowed){if(body[key]!==undefined)update[key]=body[key];}const user=await User.findByIdAndUpdate(session.user.id,update,{new:true}).select("-password");return NextResponse.json({success:true,data:user});}catch{return NextResponse.json({success:false,error:"Server error"},{status:500});}}

@@ -1,0 +1,18 @@
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600;700&family=Lato:wght@300;400;600;700&display=swap");
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+:root{--gold:#c8a96e;--gold-dark:#8b5e2a}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Cormorant Garamond",Georgia,serif;background:#fafaf8;color:#1a1a1a;-webkit-font-smoothing:antialiased}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-thumb{background:var(--gold);border-radius:2px}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes slideUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes slideRight{from{transform:translateX(-100%)}to{transform:translateX(0)}}
+@keyframes slideFromRight{from{transform:translateX(100%)}to{transform:translateX(0)}}
+.skeleton{background:linear-gradient(90deg,#f0e8d8 25%,#faf6ee 50%,#f0e8d8 75%);background-size:200% 100%;animation:shimmer 1.4s infinite}
+.animate-fadeIn{animation:fadeIn 0.3s ease}
+.animate-slideUp{animation:slideUp 0.35s ease}
+.animate-slideRight{animation:slideRight 0.3s ease}

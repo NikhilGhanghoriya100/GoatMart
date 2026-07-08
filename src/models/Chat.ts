@@ -1,0 +1,8 @@
+import mongoose,{Schema,Document,Model} from "mongoose";
+export interface IMessage{_id:mongoose.Types.ObjectId;from:mongoose.Types.ObjectId;fromName:string;fromRole:"customer"|"seller"|"admin";text:string;attachments?:string[];read:boolean;createdAt:Date}
+export interface IChat extends Document{_id:mongoose.Types.ObjectId;goat:mongoose.Types.ObjectId;goatName:string;goatImage:string;customer:mongoose.Types.ObjectId;customerName:string;seller:mongoose.Types.ObjectId;sellerName:string;messages:IMessage[];lastMessage?:string;lastMessageAt?:Date;unreadCount:{customer:number;seller:number};isActive:boolean;createdAt:Date;updatedAt:Date}
+const MessageSchema=new Schema<IMessage>({from:{type:Schema.Types.ObjectId,ref:"User",required:true},fromName:{type:String,required:true},fromRole:{type:String,enum:["customer","seller","admin"],required:true},text:{type:String,required:true},attachments:[String],read:{type:Boolean,default:false}},{timestamps:true});
+const ChatSchema=new Schema<IChat>({goat:{type:Schema.Types.ObjectId,ref:"Goat",required:true},goatName:String,goatImage:String,customer:{type:Schema.Types.ObjectId,ref:"User",required:true},customerName:String,seller:{type:Schema.Types.ObjectId,ref:"User",required:true},sellerName:String,messages:[MessageSchema],lastMessage:String,lastMessageAt:Date,unreadCount:{customer:{type:Number,default:0},seller:{type:Number,default:0}},isActive:{type:Boolean,default:true}},{timestamps:true});
+ChatSchema.index({customer:1,seller:1,goat:1},{unique:true});
+const Chat:Model<IChat>=mongoose.models.Chat||mongoose.model<IChat>("Chat",ChatSchema);
+export default Chat;
