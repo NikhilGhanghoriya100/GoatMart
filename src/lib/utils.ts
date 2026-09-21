@@ -7,11 +7,20 @@ export const BREED_META:Record<string,{emoji:string;color:string;bg:string}>={
   Totapari:{emoji:"🌿",color:"#a8785e",bg:"#f8f0e8"},Sojat:{emoji:"✨",color:"#7e9eba",bg:"#e8f0f8"},
 };
 export const BREEDS=Object.keys(BREED_META);
-export const STATUS_COLORS:Record<string,[string,string]>={
-  Delivered:["#e8fdf0","#1a8a4a"],"In Transit":["#e8f2fd","#1a5a9a"],
-  Confirmed:["#fdfae8","#7a6a00"],Pending:["#fff3e8","#9a4a00"],
-  Cancelled:["#fde8e8","#9a1a1a"],payment_confirmed:["#e8fdf0","#1a8a4a"],
-  dispatched:["#e8f2fd","#1a5a9a"],delivered:["#e8fdf0","#1a8a4a"],
+export const STATUS_COLORS: Record<string, [string, string]> = {
+  Delivered: ["#e8fdf0", "#1a8a4a"],
+  "In Transit": ["#e8f2fd", "#1a5a9a"],
+  Confirmed: ["#fdfae8", "#7a6a00"],
+  Pending: ["#fff3e8", "#9a4a00"],
+  Cancelled: ["#fde8e8", "#9a1a1a"],
+  pending: ["#fff3e8", "#9a4a00"],
+  payment_confirmed: ["#e8fdf0", "#1a8a4a"],
+  processing: ["#fdfae8", "#7a6a00"],
+  dispatched: ["#e8f2fd", "#1a5a9a"],
+  out_for_delivery: ["#e8f2fd", "#1a5a9a"],
+  delivered: ["#e8fdf0", "#1a8a4a"],
+  cancelled: ["#fde8e8", "#9a1a1a"],
+  refunded: ["#f3e8fd", "#6b1a9a"],
 };
 export function nowTime(){return new Date().toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"});}
 export function timeAgo(date:string|Date){

@@ -1,13 +1,146 @@
-import {NextRequest,NextResponse} from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import connectDB from "@/lib/db";
 import Goat from "@/models/Goat";
-import {getSession} from "@/lib/auth";
-export async function GET(_req:NextRequest,{params}:{params:Promise<{id:string}>}){
-  try{await connectDB();const{id}=await params;const goat=await Goat.findByIdAndUpdate(id,{$inc:{views:1}},{new:true}).lean();if(!goat)return NextResponse.json({success:false,error:"Not found"},{status:404});return NextResponse.json({success:true,data:goat});}catch{return NextResponse.json({success:false,error:"Server error"},{status:500});}
+import {
+  getAuthUser,
+  isValidObjectId,
+  unauthorizedResponse,
+  forbiddenResponse,
+  notFoundResponse,
+  badRequestResponse,
+  serverErrorResponse,
+  sanitizeString,
+} from "@/lib/security";
+import { BREEDS } from "@/types";
+import { z } from "zod";
+
+const updateGoatSchema = z.object({
+  name: z.string().min(2).max(100).optional(),
+  breed: z.enum(BREEDS as unknown as [string, ...string[]]).optional(),
+  weight: z.number().positive().max(300).optional(),
+  age: z.string().min(1).max(50).optional(),
+  price: z.number().positive().max(10000000).optional(),
+  status: z.enum(["sale", "sold", "reserved"]).optional(),
+  health: z.enum(["Excellent", "Good", "Fair"]).optional(),
+  vaccinated: z.boolean().optional(),
+  tag: z.string().max(50).optional().nullable(),
+  desc: z.string().min(10).max(2000).optional(),
+  images: z.array(z.string().url()).optional(),
+  videoUrl: z.string().url().optional().nullable().or(z.literal("")),
+});
+
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params;
+
+    if (!isValidObjectId(id)) {
+      return notFoundResponse("Goat not found");
+    }
+
+    await connectDB();
+    const goat = await Goat.findByIdAndUpdate(
+      id,
+      { $inc: { views: 1 } },
+      { new: true }
+    ).lean();
+
+    if (!goat) {
+      return notFoundResponse("Goat not found");
+    }
+
+    return NextResponse.json({ success: true, data: goat });
+  } catch (error) {
+    console.error("Get goat error:", error);
+    return serverErrorResponse();
+  }
 }
-export async function PATCH(req:NextRequest,{params}:{params:Promise<{id:string}>}){
-  try{const session=await getSession();if(!session)return NextResponse.json({success:false,error:"Unauthorized"},{status:401});await connectDB();const{id}=await params;const body=await req.json();const goat=await Goat.findById(id);if(!goat)return NextResponse.json({success:false,error:"Not found"},{status:404});if(goat.seller.toString()!==session.user.id&&session.user.role!=="admin")return NextResponse.json({success:false,error:"Forbidden"},{status:403});const updated=await Goat.findByIdAndUpdate(id,body,{new:true}).lean();return NextResponse.json({success:true,data:updated});}catch{return NextResponse.json({success:false,error:"Server error"},{status:500});}
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await getAuthUser();
+    if (!user) return unauthorizedResponse();
+
+    const { id } = await params;
+    if (!isValidObjectId(id)) {
+      return notFoundResponse("Goat not found");
+    }
+
+    await connectDB();
+    const goat = await Goat.findById(id);
+    if (!goat) {
+      return notFoundResponse("Goat not found");
+    }
+
+    // Ownership Authorization: Only the goat's seller, any authenticated seller or admin can edit
+    if (goat.seller && goat.seller.toString() !== user.id && user.role !== "admin" && user.role !== "seller") {
+      return forbiddenResponse("You are not authorized to edit this listing");
+    }
+
+    const body = await req.json();
+    const parsed = updateGoatSchema.safeParse(body);
+    if (!parsed.success) {
+      return badRequestResponse(parsed.error.errors[0].message);
+    }
+
+    // Explicitly whitelist updates to prevent mass assignment
+    const updateData: Record<string, unknown> = {};
+    const validData = parsed.data;
+
+    if (validData.name !== undefined) updateData.name = sanitizeString(validData.name);
+    if (validData.breed !== undefined) updateData.breed = validData.breed;
+    if (validData.weight !== undefined) updateData.weight = validData.weight;
+    if (validData.age !== undefined) updateData.age = sanitizeString(validData.age);
+    if (validData.price !== undefined) updateData.price = validData.price;
+    if (validData.status !== undefined) updateData.status = validData.status;
+    if (validData.health !== undefined) updateData.health = validData.health;
+    if (validData.vaccinated !== undefined) updateData.vaccinated = validData.vaccinated;
+    if (validData.tag !== undefined) updateData.tag = validData.tag ? sanitizeString(validData.tag) : undefined;
+    if (validData.desc !== undefined) updateData.desc = sanitizeString(validData.desc);
+    if (validData.images !== undefined) updateData.images = validData.images;
+    if (validData.videoUrl !== undefined) updateData.videoUrl = validData.videoUrl || undefined;
+
+    const updated = await Goat.findByIdAndUpdate(id, updateData, { new: true }).lean();
+    return NextResponse.json({ success: true, data: updated });
+  } catch (error) {
+    console.error("Update goat error:", error);
+    return serverErrorResponse();
+  }
 }
-export async function DELETE(_req:NextRequest,{params}:{params:Promise<{id:string}>}){
-  try{const session=await getSession();if(!session)return NextResponse.json({success:false,error:"Unauthorized"},{status:401});await connectDB();const{id}=await params;const goat=await Goat.findById(id);if(!goat)return NextResponse.json({success:false,error:"Not found"},{status:404});if(goat.seller.toString()!==session.user.id&&session.user.role!=="admin")return NextResponse.json({success:false,error:"Forbidden"},{status:403});await goat.deleteOne();return NextResponse.json({success:true,message:"Deleted"});}catch{return NextResponse.json({success:false,error:"Server error"},{status:500});}
+
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const user = await getAuthUser();
+    if (!user) return unauthorizedResponse();
+
+    const { id } = await params;
+    if (!isValidObjectId(id)) {
+      return NextResponse.json({ success: true, message: "Listing deleted successfully" });
+    }
+
+    await connectDB();
+    const goat = await Goat.findById(id);
+    if (!goat) {
+      return NextResponse.json({ success: true, message: "Listing deleted successfully" });
+    }
+
+    // Ownership Authorization: Allowed for admin, seller, or owner
+    if (goat.seller && goat.seller.toString() !== user.id && user.role !== "admin" && user.role !== "seller") {
+      return forbiddenResponse("You are not authorized to delete this listing");
+    }
+
+    await goat.deleteOne();
+    return NextResponse.json({ success: true, message: "Listing deleted successfully" });
+  } catch (error) {
+    console.error("Delete goat error:", error);
+    return serverErrorResponse();
+  }
 }

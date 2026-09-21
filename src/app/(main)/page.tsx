@@ -4,14 +4,68 @@ import GoatGrid from "@/components/GoatGrid";
 import WhySection from "@/components/WhySection";
 import StatsStrip from "@/components/StatsStrip";
 import SellerCTA from "@/components/SellerCTA";
-import connectDB from "@/lib/db";
-import GoatModel from "@/models/Goat";
-import type {Goat} from "@/types";
-async function getFeaturedGoats():Promise<Goat[]>{
-  try{await connectDB();const goats=await GoatModel.find({status:"sale"}).sort({createdAt:-1}).limit(8).lean();return JSON.parse(JSON.stringify(goats));}
-  catch{return[];}
+import {
+  BreedExplorerHeader,
+  FeaturedGoatsHeader,
+  HowBuyingWorks,
+} from "@/components/home/HomeSections";
+import type { Goat } from "@/types";
+
+// ─── Fetch real goats directly from MongoDB (No mock/fake data) ───────────
+async function getFeaturedGoats(): Promise<Goat[]> {
+  try {
+    const { default: connectDB } = await import("@/lib/db");
+    const { default: GoatModel } = await import("@/models/Goat");
+
+    await connectDB();
+
+    // Fetch all real goats from DB
+    const goats = await GoatModel.find({})
+      .sort({ createdAt: -1 })
+      .limit(12)
+      .lean();
+
+    if (goats && goats.length > 0) {
+      return JSON.parse(JSON.stringify(goats));
+    }
+    return [];
+  } catch (error) {
+    console.error("Failed to fetch featured goats from DB:", error);
+    return [];
+  }
 }
-export default async function HomePage(){
-  const featuredGoats=await getFeaturedGoats();
-  return(<><HeroBanner/><div className="max-w-[1280px] mx-auto px-3 py-7"><h2 className="text-3xl font-bold tracking-tight font-serif mb-5">Categories</h2><CategoryStrip/></div><div className="max-w-[1280px] mx-auto px-3 pb-14"><div className="flex items-center justify-between mb-5"><h2 className="text-3xl font-bold tracking-tight font-serif">Premium Listings</h2><a href="/shop" className="text-sm font-semibold text-[#c8a96e] border border-[#c8a96e] rounded-full px-4 py-2 hover:bg-[#c8a96e10] transition-colors font-sans">View All →</a></div><GoatGrid goats={featuredGoats}/></div><WhySection/><StatsStrip/></>);
+
+export default async function HomePage() {
+  const featuredGoats = await getFeaturedGoats();
+
+  return (
+    <div className="w-full max-w-full overflow-x-hidden space-y-10 sm:space-y-16 pb-12">
+      {/* 1. Hero Section */}
+      <HeroBanner />
+
+      {/* 2. Breed Explorer Strip */}
+      <section className="max-w-[1280px] mx-auto px-4 sm:px-6">
+        <BreedExplorerHeader />
+        <CategoryStrip />
+      </section>
+
+      {/* 3. Featured Championship Livestock Grid */}
+      <section className="max-w-[1280px] mx-auto px-4 sm:px-6">
+        <FeaturedGoatsHeader count={featuredGoats.length} />
+        <GoatGrid goats={featuredGoats} />
+      </section>
+
+      {/* 4. Live Trust & Escrow Stats Strip */}
+      <StatsStrip />
+
+      {/* 5. How Buying on GoatMart Works */}
+      <HowBuyingWorks />
+
+      {/* 6. Why Buyers Choose GoatMart */}
+      <WhySection />
+
+      {/* 7. Seller CTA Banner */}
+      <SellerCTA />
+    </div>
+  );
 }

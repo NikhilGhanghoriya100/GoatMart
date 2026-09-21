@@ -1,24 +1,151 @@
+"use client";
 import Link from "next/link";
-const LINKS={Marketplace:[{label:"Browse Goats",href:"/shop"},{label:"Premium Listings",href:"/shop"}],Support:[{label:"Live Chat",href:"/chat"},{label:"Order Tracking",href:"/orders"},{label:"Contact Us",href:"/contact"}],Company:[{label:"About Us",href:"/about"},{label:"Privacy Policy",href:"/privacy"},{label:"Terms & Conditions",href:"/terms"}]};
-export default function Footer(){
-  return(
-    <footer className="bg-[#0f0f0f] text-gray-500 pt-12 pb-6 mt-0">
-      <div className="max-w-[1280px] mx-auto px-5">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 mb-10">
-          <div className="col-span-2 sm:col-span-1">
-            <div className="flex items-center gap-2.5 mb-3"><div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#c8a96e] to-[#8b5e2a] flex items-center justify-center text-base text-center">🐐</div><span className="text-lg font-bold text-[#c8a96e]">GoatMart</span></div>
-            {/* <p className="text-xs leading-relaxed text-gray-500 font-sans max-w-[220px]">India&apos;s most trusted premium livestock marketplace.</p> */}
-            {/* <div className="mt-4 p-3 bg-[#1a1a1a] rounded-xl border border-[#2a2a2a]"><Link href="/seller-landing" className="text-xs text-[#c8a96e] font-sans font-semibold">🏪 Become a Seller → Apply Now</Link></div> */}
-         </div>
-          {Object.entries(LINKS).map(([title,links])=>(<div key={title}><div className="text-[10px] font-bold tracking-[2px] uppercase text-[#c8a96e] mb-4 font-sans">{title}</div>{links.map(l=>(<Link key={l.label} href={l.href} className="block text-xs text-gray-500 mb-2.5 font-sans hover:text-[#c8a96e] transition-colors">{l.label}</Link>))}</div>))}
+import { ShieldCheck, ArrowUpRight } from "lucide-react";
+import { useTranslation } from "@/hooks/useTranslation";
+import Logo from "@/components/ui/Logo";
+
+export default function Footer() {
+  const { t, translateBreed } = useTranslation();
+
+  return (
+    <footer className="w-full max-w-full overflow-hidden bg-[#120e09] text-zinc-400 border-t border-[#261c12]">
+      {/* Top Banner */}
+      <div className="border-b border-[#261c12] py-6 sm:py-8 px-4 sm:px-6 w-full">
+        <div className="max-w-[1280px] mx-auto flex flex-col md:flex-row items-center justify-between gap-4 text-center md:text-left">
+          <div className="flex items-center gap-3">
+            <Logo size="sm" showTagline={false} inverted={true} />
+            <div className="text-left border-l border-[#3a2c1d] pl-3">
+              <div className="text-white font-serif font-bold text-base leading-tight">{t.footerAbout}</div>
+              <div className="text-xs text-[#d4b272] font-sans mt-0.5">{t.footerAboutSub}</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/contact"
+              className="text-xs font-bold text-white bg-white/10 px-4 py-2 rounded-full border border-white/15 hover:bg-white/20 transition-colors flex items-center gap-1.5 font-sans"
+            >
+              ✉️ {t.footerContactSupport}
+            </Link>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center justify-between pt-5 border-t border-[#1f1f1f] gap-3">
-          <p className="text-xs font-sans text-gray-600">© {new Date().getFullYear()} GoatMart. All rights reserved.</p>
-          <p className="text-xs font-sans text-gray-700">Made with ❤️ for India&apos;s livestock community</p>
+      </div>
+
+      {/* Main Footer Links */}
+      <div className="max-w-[1280px] mx-auto px-4 sm:px-6 py-12">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-8">
+          {/* Col 1: About & Mission */}
+          <div className="col-span-2 space-y-4">
+            <Logo size="md" showTagline={true} inverted={true} />
+            <p className="text-xs sm:text-sm text-zinc-400 font-sans leading-relaxed max-w-sm pt-2">
+              {t.footerStory}
+            </p>
+            <div className="flex items-center gap-2 pt-2">
+              <span className="px-3 py-1 rounded-full text-[11px] font-sans font-semibold bg-emerald-950/80 text-emerald-400 border border-emerald-800/60 flex items-center gap-1.5">
+                <ShieldCheck size={14} className="text-emerald-400" /> {t.footerEscrowBadge}
+              </span>
+            </div>
+          </div>
+
+          {/* Col 2: Top Breeds */}
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-[#d4b272] font-sans mb-4">
+              {t.footerColBreeds}
+            </h4>
+            <ul className="space-y-2.5 text-xs font-sans">
+              {["Jamunapari", "Beetal", "Sirohi", "Barbari", "Black Bengal", "Osmanabadi", "Sojat"].map((b) => (
+                <li key={b}>
+                  <Link href={`/shop?breed=${b}`} className="hover:text-white transition-colors flex items-center gap-1">
+                    <span>{translateBreed(b)}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* Col 3: Customer Care */}
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-[#d4b272] font-sans mb-4">
+              {t.footerColCare}
+            </h4>
+            <ul className="space-y-2.5 text-xs font-sans">
+              <li>
+                <Link href="/orders" className="hover:text-white transition-colors">
+                  {t.footerTrackOrder}
+                </Link>
+              </li>
+              <li>
+                <Link href="/seller-landing" className="hover:text-white transition-colors flex items-center gap-1">
+                  {t.footerSellGoats} <ArrowUpRight size={11} />
+                </Link>
+              </li>
+              <li>
+                <Link href="/chat" className="hover:text-white transition-colors">
+                  {t.footerLiveChat}
+                </Link>
+              </li>
+              <li>
+                <Link href="/contact" className="hover:text-white transition-colors">
+                  {t.footerContactSupport}
+                </Link>
+              </li>
+              <li>
+                <Link href="/about" className="hover:text-white transition-colors">
+                  {t.footerHowEscrowWorks}
+                </Link>
+              </li>
+            </ul>
+          </div>
+
+          {/* Col 4: Trust & Policies */}
+          <div>
+            <h4 className="text-xs font-bold uppercase tracking-wider text-[#d4b272] font-sans mb-4">
+              {t.footerColTrust}
+            </h4>
+            <ul className="space-y-2.5 text-xs font-sans">
+              <li>
+                <Link href="/terms" className="hover:text-white transition-colors">
+                  {t.footerTerms}
+                </Link>
+              </li>
+              <li>
+                <Link href="/privacy" className="hover:text-white transition-colors">
+                  {t.footerPrivacy}
+                </Link>
+              </li>
+              <li>
+                <Link href="/about" className="hover:text-white transition-colors">
+                  {t.footerVetStandards}
+                </Link>
+              </li>
+              <li>
+                <Link href="/about" className="hover:text-white transition-colors">
+                  {t.footerTransportPolicy}
+                </Link>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        {/* Payment Partners & Badges */}
+        <div className="mt-12 pt-8 border-t border-[#261c12] flex flex-col sm:flex-row items-center justify-between gap-4 text-xs font-sans">
+          <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap text-zinc-400">
+            <span>🔒 {t.footerSecurePayments}</span>
+            <span className="px-2.5 py-1 rounded bg-[#1c160e] text-zinc-300 font-semibold border border-white/10">
+              UPI (GPay / PhonePe / Paytm)
+            </span>
+            <span className="px-2.5 py-1 rounded bg-[#1c160e] text-zinc-300 font-semibold border border-white/10">
+              Debit / Credit Cards
+            </span>
+            <span className="px-2.5 py-1 rounded bg-[#1c160e] text-zinc-300 font-semibold border border-white/10">
+              Razorpay Secure Gateway
+            </span>
+          </div>
+
+          <div className="text-zinc-500 text-center sm:text-right">
+            © {new Date().getFullYear()} GoatMart Inc. {t.footerRights}
+          </div>
         </div>
       </div>
     </footer>
   );
 }
-
-

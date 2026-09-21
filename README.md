@@ -1,4 +1,4 @@
-# 🐐 Bakrawale — Premium Goat Marketplace
+# 🐐 GoatMart — Premium Goat Marketplace
 
 India's most trusted premium livestock marketplace built with Next.js 15, TypeScript, MongoDB Atlas, and Razorpay.
 
@@ -42,8 +42,8 @@ bakrawale/
 ### 1. Clone & Install
 
 ```bash
-git clone https://github.com/yourusername/bakrawale.git
-cd bakrawale
+git clone https://github.com/yourusername/GoatMart.git
+cd GoatMart
 npm install
 ```
 
