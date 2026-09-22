@@ -1,15 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { getToken } from "next-auth/jwt";
+import { v2 as cloudinary } from "cloudinary";
 import dbConnect from "@/lib/db";
 import Banner from "@/models/Banner";
-import cloudinary from "@/lib/cloudinary";
+
+// Configure cloudinary explicitly here
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    // getToken reads JWT directly from request cookies — reliable in App Router
+    const token = await getToken({
+      req,
+      secret: process.env.NEXTAUTH_SECRET,
+    });
 
-    if (session?.user?.role !== "admin") {
+    if (!token || token.role !== "admin") {
       return NextResponse.json(
         { success: false, error: "Admin only" },
         { status: 403 }
@@ -17,7 +27,6 @@ export async function POST(req: NextRequest) {
     }
 
     const formData = await req.formData();
-
     const file = formData.get("file");
     const slideIndex = Number(formData.get("slideIndex"));
 
@@ -30,7 +39,7 @@ export async function POST(req: NextRequest) {
 
     if (![0, 1, 2].includes(slideIndex)) {
       return NextResponse.json(
-        { success: false, error: "Invalid banner slot" },
+        { success: false, error: "Invalid banner slot (must be 0, 1, or 2)" },
         { status: 400 }
       );
     }
@@ -49,36 +58,45 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Convert file to base64 — same approach as working /api/upload route
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
+    const base64 = `data:${file.type};base64,${buffer.toString("base64")}`;
 
-    const uploadResult = await new Promise<any>((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
+    console.log(`[Banner Upload] Uploading slide ${slideIndex} to Cloudinary...`);
+
+    // Use cloudinary.uploader.upload (NOT upload_stream) with base64 — avoids stream hang
+    let uploadResult: any;
+    try {
+      uploadResult = await cloudinary.uploader.upload(base64, {
+        folder: "bakrawale/banners",
+        resource_type: "image",
+        transformation: [
+          { width: 1920, height: 1080, crop: "limit" },
+          { quality: "auto:good" },
+          { fetch_format: "auto" },
+        ],
+        timeout: 60000, // 60 second timeout
+      });
+    } catch (cloudErr: any) {
+      console.error("[Banner Upload] Cloudinary error:", cloudErr);
+      return NextResponse.json(
         {
-          folder: "bakrawale/banners",
-          resource_type: "image",
-          transformation: [
-            {
-              width: 1920,
-              height: 1080,
-              crop: "limit",
-            },
-            {
-              quality: "auto:good",
-            },
-            {
-              fetch_format: "auto",
-            },
-          ],
+          success: false,
+          error: `Cloudinary upload failed: ${cloudErr?.message || "Unknown error"}`,
         },
-        (error, result) => {
-          if (error) reject(error);
-          else resolve(result);
-        }
+        { status: 500 }
       );
+    }
 
-      stream.end(buffer);
-    });
+    if (!uploadResult?.secure_url) {
+      return NextResponse.json(
+        { success: false, error: "Cloudinary did not return a URL" },
+        { status: 500 }
+      );
+    }
+
+    console.log(`[Banner Upload] Cloudinary success: ${uploadResult.secure_url}`);
 
     await dbConnect();
 
@@ -101,8 +119,7 @@ export async function POST(req: NextRequest) {
       data: banner,
     });
   } catch (error: any) {
-    console.error("Banner upload error:", error);
-
+    console.error("[Banner Upload] Unexpected error:", error);
     return NextResponse.json(
       {
         success: false,

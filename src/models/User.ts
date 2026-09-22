@@ -9,6 +9,8 @@ export interface IUser extends Document {
   phone?: string;
   role: "customer" | "seller" | "admin";
   avatar?: string;
+  firebaseUid?: string;
+  authProvider?: "credentials" | "google";
   address?: {
     street: string;
     city: string;
@@ -36,10 +38,12 @@ const UserSchema = new Schema<IUser>(
   {
     name: { type: String, required: true, trim: true, maxlength: 100 },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true, maxlength: 150 },
-    password: { type: String, required: true, minlength: 6, select: false },
+    password: { type: String, required: false, minlength: 6, select: false },
     phone: { type: String, trim: true, maxlength: 20 },
     role: { type: String, enum: ["customer", "seller", "admin"], default: "customer" },
     avatar: { type: String, default: "" },
+    firebaseUid: { type: String, default: "" },
+    authProvider: { type: String, enum: ["credentials", "google"], default: "credentials" },
     address: {
       street: { type: String, default: "", maxlength: 200 },
       city: { type: String, default: "", maxlength: 100 },

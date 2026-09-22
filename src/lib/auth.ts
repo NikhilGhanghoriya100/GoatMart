@@ -3,6 +3,64 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import connectDB from "./db";
 import User from "@/models/User";
 
+async function verifyFirebaseGoogleToken(idToken: string): Promise<{
+  email: string;
+  name?: string;
+  picture?: string;
+  uid?: string;
+} | null> {
+  try {
+    const tokenUrl = `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`;
+    const response = await fetch(tokenUrl);
+
+    if (response.ok) {
+      const data = await response.json();
+      const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+
+      if (projectId && data.aud && data.aud !== projectId) {
+        console.warn("Firebase token aud mismatch:", data.aud, "expected:", projectId);
+      }
+
+      if (data.email) {
+        return {
+          email: data.email,
+          name: data.name || "",
+          picture: data.picture || "",
+          uid: data.user_id || data.sub || "",
+        };
+      }
+    }
+
+    const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+    if (apiKey) {
+      const lookupUrl = `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${apiKey}`;
+      const lookupRes = await fetch(lookupUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ idToken }),
+      });
+
+      if (lookupRes.ok) {
+        const lookupData = await lookupRes.json();
+        const firebaseUser = lookupData.users?.[0];
+        if (firebaseUser && firebaseUser.email) {
+          return {
+            email: firebaseUser.email,
+            name: firebaseUser.displayName || "",
+            picture: firebaseUser.photoUrl || "",
+            uid: firebaseUser.localId || "",
+          };
+        }
+      }
+    }
+
+    return null;
+  } catch (err) {
+    console.error("Firebase token verification error:", err);
+    return null;
+  }
+}
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
@@ -35,6 +93,79 @@ export const authOptions: NextAuthOptions = {
         }
 
         // Clean avatar to avoid putting huge base64 strings in JWT cookie
+        const safeAvatar =
+          user.avatar && (user.avatar.startsWith("http") || user.avatar.startsWith("/"))
+            ? user.avatar
+            : "";
+
+        return {
+          id: user._id.toString(),
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          avatar: safeAvatar,
+          sellerStatus: user.sellerProfile?.status || (user.role === "seller" ? "pending" : "customer"),
+        };
+      },
+    }),
+    CredentialsProvider({
+      id: "firebase-google",
+      name: "Firebase Google",
+      credentials: {
+        idToken: { label: "ID Token", type: "text" },
+        role: { label: "Role", type: "text" },
+        farmName: { label: "Farm Name", type: "text" },
+        farmLocation: { label: "Farm Location", type: "text" },
+        phone: { label: "Phone", type: "text" },
+      },
+      async authorize(credentials) {
+        if (!credentials?.idToken) {
+          throw new Error("Google authentication token is missing");
+        }
+
+        const verified = await verifyFirebaseGoogleToken(credentials.idToken);
+        if (!verified || !verified.email) {
+          throw new Error("Invalid or expired Google authentication");
+        }
+
+        const email = verified.email.toLowerCase().trim();
+        await connectDB();
+
+        let user = await User.findOne({ email });
+
+        if (user) {
+          // Existing user: preserve existing role, sellerProfile, password
+          if (user.role === "seller" && user.sellerProfile?.status === "suspended") {
+            throw new Error("Your seller account has been suspended. Please contact support.");
+          }
+
+          let needsSave = false;
+          if (!user.firebaseUid && verified.uid) {
+            user.firebaseUid = verified.uid;
+            needsSave = true;
+          }
+          if (!user.avatar && verified.picture) {
+            user.avatar = verified.picture;
+            needsSave = true;
+          }
+          if (needsSave) {
+            await user.save();
+          }
+        } else {
+          // New user: strictly create default customer account (sellers must register manually via form)
+          const cleanName = verified.name || email.split("@")[0];
+
+          user = await User.create({
+            name: cleanName,
+            email,
+            role: "customer",
+            avatar: verified.picture || "",
+            firebaseUid: verified.uid || "",
+            authProvider: "google",
+            isEmailVerified: true,
+          });
+        }
+
         const safeAvatar =
           user.avatar && (user.avatar.startsWith("http") || user.avatar.startsWith("/"))
             ? user.avatar

@@ -857,7 +857,6 @@ const TABS = [
   { id: "sellers", ic: "🏪", l: "Sellers" },
   { id: "customers", ic: "👥", l: "Customers" },
   { id: "chats", ic: "💬", l: "Chat Monitor" },
-  { id: "banners", ic: "🖼️", l: "Banners" },
   { id: "analytics", ic: "📈", l: "Analytics" },
 ];
 
@@ -899,17 +898,6 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // Simple 3-image banner manager
-  const [bannerData, setBannerData] = useState<any[]>([
-    { slideIndex: 0, imageUrl: "" },
-    { slideIndex: 1, imageUrl: "" },
-    { slideIndex: 2, imageUrl: "" },
-  ]);
-
-  const [bannerImgUploading, setBannerImgUploading] = useState<number | null>(
-    null
-  );
-
   useEffect(() => {
     Promise.all([
       axios.get("/api/admin/stats"),
@@ -929,50 +917,6 @@ export default function AdminDashboard() {
       })
       .finally(() => setLoading(false));
   }, []);
-
-  const uploadBannerImage = async (idx: number, file: File) => {
-    if (!file.type.startsWith("image/")) {
-      toast.error("Only image files are allowed");
-      return;
-    }
-
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error("Maximum banner size is 10MB");
-      return;
-    }
-
-    setBannerImgUploading(idx);
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("slideIndex", String(idx));
-
-      const { data } = await axios.post("/api/banners/upload", formData);
-
-      if (data.success) {
-        setBannerData((prev) =>
-          prev.map((banner, i) =>
-            i === idx
-              ? {
-                  ...banner,
-                  slideIndex: idx,
-                  imageUrl: data.data?.imageUrl || "",
-                }
-              : banner
-          )
-        );
-
-        toast.success(`Banner ${idx + 1} uploaded successfully`);
-      } else {
-        toast.error(data.error || "Banner upload failed");
-      }
-    } catch (err: any) {
-      toast.error(err?.response?.data?.error || "Banner upload failed");
-    } finally {
-      setBannerImgUploading(null);
-    }
-  };
 
   const approveSeller = async (id: string, status: string) => {
     try {
@@ -1863,119 +1807,7 @@ export default function AdminDashboard() {
                 </div>
               )}
 
-              {/* BANNERS TAB */}
-              {tab === "banners" && (
-                <div className="space-y-6" id="banners">
-                  <div>
-                    <h2 className="font-bold text-base text-white font-serif">
-                      Homepage Banners
-                    </h2>
 
-                    <p className="text-xs text-gray-500 font-sans mt-1">
-                      Upload exactly 3 banner images. Use 16:9 images
-                      for the best result.
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-                    {[0, 1, 2].map((idx) => {
-                      const banner = bannerData[idx] || {};
-
-                      return (
-                        <div
-                          key={idx}
-                          className="rounded-2xl border border-[#252525] bg-[#1a1a1a] overflow-hidden"
-                        >
-                          <div className="px-5 py-4 border-b border-[#252525] flex items-center justify-between">
-                            <div>
-                              <h3 className="font-bold text-white font-serif">
-                                Banner {idx + 1}
-                              </h3>
-
-                              <p className="text-[10px] text-gray-500 mt-1 font-sans">
-                                16:9 recommended
-                              </p>
-                            </div>
-
-                            <span className="text-xs px-2.5 py-1 rounded-full bg-[#252525] text-[#c8a96e] font-sans font-bold">
-                              Slot {idx + 1}
-                            </span>
-                          </div>
-
-                          <div className="p-4 space-y-4">
-                            <div className="aspect-video rounded-xl overflow-hidden bg-[#111] border border-[#333]">
-                              {banner.imageUrl ? (
-                                <img
-                                  src={banner.imageUrl}
-                                  alt={`Banner ${idx + 1}`}
-                                  className="w-full h-full object-cover"
-                                />
-                              ) : (
-                                <div className="w-full h-full flex flex-col items-center justify-center text-gray-600">
-                                  <div className="text-4xl mb-2">
-                                    🖼️
-                                  </div>
-
-                                  <span className="text-xs font-sans">
-                                    No banner uploaded
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-
-                            <label
-                              className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-bold font-sans cursor-pointer transition-all ${
-                                bannerImgUploading === idx
-                                  ? "bg-amber-950/40 text-amber-400 border border-amber-800/40 cursor-wait"
-                                  : "bg-[#c8a96e] text-black hover:opacity-90"
-                              }`}
-                            >
-                              <input
-                                type="file"
-                                accept="image/*"
-                                className="hidden"
-                                disabled={
-                                  bannerImgUploading !== null
-                                }
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-
-                                  if (file) {
-                                    uploadBannerImage(idx, file);
-                                  }
-
-                                  e.currentTarget.value = "";
-                                }}
-                              />
-
-                              {bannerImgUploading === idx
-                                ? "Uploading..."
-                                : banner.imageUrl
-                                ? "Replace Banner"
-                                : "Upload Banner"}
-                            </label>
-
-                            <p className="text-[10px] text-gray-600 font-sans text-center">
-                              JPG, PNG, WEBP • Maximum 10MB
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="rounded-xl border border-[#252525] bg-[#151515] px-4 py-3">
-                    <p className="text-xs text-gray-500 font-sans">
-                      <span className="text-[#c8a96e] font-bold">
-                        Note:
-                      </span>{" "}
-                      The uploaded image itself contains all banner
-                      text, pricing and design. No additional banner
-                      fields are required.
-                    </p>
-                  </div>
-                </div>
-              )}
 
               {/* ANALYTICS TAB */}
               {tab === "analytics" && (
