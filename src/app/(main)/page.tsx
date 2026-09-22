@@ -22,7 +22,7 @@ async function getFeaturedGoats(): Promise<Goat[]> {
     // Fetch all real goats from DB
     const goats = await GoatModel.find({})
       .sort({ createdAt: -1 })
-      .limit(12)
+      .limit(6)
       .lean();
 
     if (goats && goats.length > 0) {
