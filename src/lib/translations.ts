@@ -546,3 +546,5 @@ export const translations = {
     footerRights: "सर्वाधिकार सुरक्षित। भारत के पशुपालक समुदाय के लिए समर्पित।",
   },
 };
+
+

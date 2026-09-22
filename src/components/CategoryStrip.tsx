@@ -17,15 +17,17 @@ const IMGS: Record<string, string> = {
   Sojat: "/breeds/sojat.jpeg",
   Kota: "/breeds/Kota_goat.jpeg",
   Malwa: "/breeds/malwa_goat.jpeg",
+  Others: "/breeds/others.jpg",
 };
 
 const EXTRA_BREEDS = [
-  { name: "Kota", emoji: "🐐" },
-  { name: "Malwa", emoji: "🐐" },
+  { name: "Kota", emoji: "??" },
+  { name: "Malwa", emoji: "??" },
+  { name: "Others", emoji: "??" },
 ];
 
 const ALL = [
-  { name: "All", emoji: "🐐", origin: "All Breeds" },
+  { name: "All", emoji: "??", origin: "All Breeds" },
   ...BREEDS.map((b) => ({ name: b, ...BREED_META[b] })),
   ...EXTRA_BREEDS,
 ];
@@ -92,4 +94,3 @@ export default function CategoryStrip() {
     </div>
   );
 }
-
