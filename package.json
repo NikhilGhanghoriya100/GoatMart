@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "next lint",
     "seed": "ts-node -r tsconfig-paths/register src/lib/seed.ts",
-    "socket": "node server.js"
+    "socket": "node server.js",
+    "build:worker": "opennextjs-cloudflare build",
+    "preview:worker": "wrangler dev",
+    "deploy:worker": "opennextjs-cloudflare build && wrangler deploy"
   },
   "dependencies": {
     "axios": "^1.7.9",
@@ -34,6 +37,7 @@
     "zustand": "^5.0.3"
   },
   "devDependencies": {
+    "@opennextjs/cloudflare": "^1.20.6",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.10.0",
     "@types/nodemailer": "^8.0.2",
@@ -47,6 +51,7 @@
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "ts-node": "^10.9.2",
-    "tsconfig-paths": "^4.2.0"
+    "tsconfig-paths": "^4.2.0",
+    "wrangler": "^4.137.0"
   }
 }
