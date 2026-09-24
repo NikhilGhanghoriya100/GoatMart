@@ -82,10 +82,10 @@ export default function SearchBar() {
     <div ref={ref} className="relative w-full">
       {/* Search Input Container */}
       <div
-        className={`flex items-center rounded-2xl border transition-all duration-200 overflow-hidden bg-zinc-50 dark:bg-zinc-900 ${
+        className={`flex items-center rounded-xl border transition-all duration-200 overflow-hidden bg-white ${
           open || fOpen
-            ? "border-zinc-900 dark:border-zinc-100 shadow-lg ring-2 ring-zinc-900/10 dark:ring-white/15"
-            : "border-zinc-300 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-700"
+            ? "border-[#febd69] shadow-lg ring-2 ring-[#febd69]/40"
+            : "border-zinc-300 hover:border-[#febd69]"
         }`}
       >
         {/* Filter Toggle Button */}
@@ -95,25 +95,22 @@ export default function SearchBar() {
             setFOpen((f) => !f);
             setOpen(false);
           }}
-          className="px-3.5 h-11 bg-transparent border-r border-zinc-200 dark:border-zinc-800 text-xs font-bold text-zinc-600 dark:text-zinc-300 flex items-center gap-1.5 flex-shrink-0 hover:text-zinc-950 dark:hover:text-white transition-colors"
+          className="px-3 h-10 sm:h-11 bg-zinc-100 hover:bg-zinc-200 border-r border-zinc-300 text-xs font-bold text-zinc-700 flex items-center gap-1.5 flex-shrink-0 transition-colors"
           title={t.filter}
         >
-          <SlidersHorizontal size={14} />
-          <span className="hidden sm:inline">{t.filter}</span>
+          <SlidersHorizontal size={14} className="text-zinc-600" />
+          <span className="hidden sm:inline text-zinc-800">{t.filter}</span>
           {activeFilters > 0 && (
-            <span className="w-4 h-4 rounded-full bg-zinc-900 text-white dark:bg-white dark:text-zinc-950 text-[10px] font-black flex items-center justify-center">
+            <span className="w-4 h-4 rounded-full bg-[#131921] text-white text-[10px] font-black flex items-center justify-center">
               {activeFilters}
             </span>
           )}
         </button>
 
-        {/* Search Icon */}
-        <Search size={16} className="ml-3 text-zinc-400 dark:text-zinc-500 flex-shrink-0" />
-
         {/* Text Input */}
         <input
           type="text"
-          className="flex-1 px-2.5 py-2.5 text-sm bg-transparent outline-none font-sans text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 min-w-0"
+          className="flex-1 px-3 py-2 text-sm bg-transparent outline-none font-sans text-zinc-900 placeholder:text-zinc-500 min-w-0"
           placeholder={t.searchPlaceholder}
           value={q}
           onChange={(e) => {
@@ -143,20 +140,22 @@ export default function SearchBar() {
               setSearchQuery("");
               setResults([]);
             }}
-            className="p-1.5 mr-1 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
+            className="p-1.5 mr-1 text-zinc-400 hover:text-zinc-700 transition-colors"
             title="Clear"
           >
             <X size={15} />
           </button>
         )}
 
-        {/* Submit Search Button */}
+        {/* Amazon Yellow Submit Search Button */}
         <button
           type="button"
           onClick={() => executeSearch()}
-          className="px-4 sm:px-5 h-11 bg-zinc-950 dark:bg-zinc-100 text-white dark:text-zinc-950 text-xs font-bold font-sans flex-shrink-0 hover:bg-zinc-800 dark:hover:bg-white/90 transition-colors flex items-center gap-1.5"
+          className="px-4 sm:px-5 h-10 sm:h-11 bg-[#febd69] hover:bg-[#f3a847] text-zinc-950 text-xs font-bold font-sans flex-shrink-0 transition-colors flex items-center gap-1.5"
+          aria-label="Search"
         >
-          <span>{t.searchBtn}</span>
+          <Search size={17} className="text-zinc-950" />
+          <span className="hidden md:inline">{t.searchBtn}</span>
         </button>
       </div>
 

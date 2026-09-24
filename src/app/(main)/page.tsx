@@ -1,17 +1,14 @@
 import HeroBanner from "@/components/HeroBanner";
 import CategoryStrip from "@/components/CategoryStrip";
 import GoatGrid from "@/components/GoatGrid";
-import WhySection from "@/components/WhySection";
-import StatsStrip from "@/components/StatsStrip";
-import SellerCTA from "@/components/SellerCTA";
 import {
   BreedExplorerHeader,
   FeaturedGoatsHeader,
-  HowBuyingWorks,
+  ViewAllGoatsCTA,
 } from "@/components/home/HomeSections";
 import type { Goat } from "@/types";
 
-// ─── Fetch real goats directly from MongoDB (No mock/fake data) ───────────
+// ─── Fetch real goats directly from MongoDB (For Sale only, up to 20) ─────
 async function getFeaturedGoats(): Promise<Goat[]> {
   try {
     const { default: connectDB } = await import("@/lib/db");
@@ -19,10 +16,12 @@ async function getFeaturedGoats(): Promise<Goat[]> {
 
     await connectDB();
 
-    // Fetch all real goats from DB
-    const goats = await GoatModel.find({})
+    // Fetch up to 20 goats that are FOR SALE (exclude sold out)
+    const goats = await GoatModel.find({
+      status: { $nin: ["sold", "Sold", "SOLD"] },
+    })
       .sort({ createdAt: -1 })
-      .limit(6)
+      .limit(20)
       .lean();
 
     if (goats && goats.length > 0) {
@@ -39,33 +38,22 @@ export default async function HomePage() {
   const featuredGoats = await getFeaturedGoats();
 
   return (
-    <div className="w-full max-w-full overflow-x-hidden space-y-10 sm:space-y-16 pb-12">
-      {/* 1. Hero Section */}
+    <div className="w-full max-w-full overflow-x-hidden space-y-8 sm:space-y-12 pb-14">
+      {/* 1. Hero Carousel Banner */}
       <HeroBanner />
 
-      {/* 2. Breed Explorer Strip */}
-      <section className="max-w-[1280px] mx-auto px-4 sm:px-6">
+      {/* 2. Popular Breeds Strip */}
+      <section className="max-w-[1280px] mx-auto px-3 sm:px-6">
         <BreedExplorerHeader />
         <CategoryStrip />
       </section>
 
-      {/* 3. Featured Championship Livestock Grid */}
-      <section className="max-w-[1280px] mx-auto px-4 sm:px-6">
+      {/* 3. Featured Goats Grid (20 Goats for sale + View All Goats Button) */}
+      <section className="max-w-[1280px] mx-auto px-3 sm:px-6">
         <FeaturedGoatsHeader count={featuredGoats.length} />
         <GoatGrid goats={featuredGoats} />
+        <ViewAllGoatsCTA />
       </section>
-
-      {/* 4. Live Trust & Escrow Stats Strip */}
-      <StatsStrip />
-
-      {/* 5. How Buying on GoatMart Works */}
-      <HowBuyingWorks />
-
-      {/* 6. Why Buyers Choose GoatMart */}
-      <WhySection />
-
-      {/* 7. Seller CTA Banner */}
-      <SellerCTA />
     </div>
   );
 }
