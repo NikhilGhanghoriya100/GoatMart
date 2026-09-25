@@ -8,6 +8,9 @@ import {
 } from "@/components/home/HomeSections";
 import type { Goat } from "@/types";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 // ─── Fetch real goats directly from MongoDB (For Sale only, up to 20) ─────
 async function getFeaturedGoats(): Promise<Goat[]> {
   try {

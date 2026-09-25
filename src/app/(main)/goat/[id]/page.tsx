@@ -15,7 +15,12 @@ export default function GoatPage() {
   useEffect(() => {
     if (!id) return;
     axios
-      .get(`/api/goats/${id}`)
+      .get(`/api/goats/${id}?_t=${Date.now()}`, {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+          Pragma: "no-cache",
+        },
+      })
       .then(({ data }) => {
         if (data.success && data.data) {
           setGoat(data.data);

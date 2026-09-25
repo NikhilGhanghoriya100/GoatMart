@@ -34,8 +34,14 @@ export function useGoats(options: UseGoatsOptions = {}) {
       if (options.limit) params.set("limit", String(options.limit));
       if (options.seller) params.set("seller", options.seller);
       params.set("page", String(page));
+      params.set("_t", String(Date.now()));
 
-      const { data } = await axios.get(`/api/goats?${params.toString()}`);
+      const { data } = await axios.get(`/api/goats?${params.toString()}`, {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+          Pragma: "no-cache",
+        },
+      });
       if (data.success) {
         setGoats(data.data);
         setTotalPages(data.pagination?.pages || 1);
@@ -73,7 +79,12 @@ export function useGoat(id: string) {
     if (!id) return;
     setLoading(true);
     axios
-      .get(`/api/goats/${id}`)
+      .get(`/api/goats/${id}?_t=${Date.now()}`, {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+          Pragma: "no-cache",
+        },
+      })
       .then(({ data }) => {
         if (data.success) setGoat(data.data);
       })

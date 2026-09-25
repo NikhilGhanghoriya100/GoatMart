@@ -1761,10 +1761,12 @@ export default function SellerDashboard() {
     setLoading(true);
 
     Promise.all([
-      axios.get(`/api/goats?seller=${session.user.id}&status=all&limit=50`),
-      axios.get("/api/orders"),
-      axios.get("/api/chat"),
-      axios.get("/api/user/profile"),
+      axios.get(`/api/goats?seller=${session.user.id}&status=all&limit=50&_t=${Date.now()}`, {
+        headers: { "Cache-Control": "no-store, no-cache, must-revalidate", Pragma: "no-cache" },
+      }),
+      axios.get(`/api/orders?_t=${Date.now()}`),
+      axios.get(`/api/chat?_t=${Date.now()}`),
+      axios.get(`/api/user/profile?_t=${Date.now()}`),
     ])
       .then(([g, o, c, p]) => {
         if (g.data?.success) setGoats(g.data.data || []);
@@ -1870,14 +1872,22 @@ export default function SellerDashboard() {
     try {
       const { data } = await axios.delete(`/api/goats/${id}`);
 
-      if (data?.success !== false) {
-        setGoats((prev) => prev.filter((g) => g._id !== id));
+      if (data?.success) {
+        const deletedId = data?.data?.id || id;
+        setGoats((prev) =>
+          prev.filter((g) => {
+            const gid = String(g._id || g.id || "");
+            return gid !== String(deletedId) && gid !== String(id);
+          })
+        );
 
         toast.success(
           isHindi
             ? "लिस्टिंग सफलतापूर्वक डिलीट कर दी गई"
             : "Listing deleted successfully"
         );
+
+        router.refresh();
       } else {
         toast.error(
           data?.error ||
@@ -1885,12 +1895,18 @@ export default function SellerDashboard() {
         );
       }
     } catch (err: any) {
-      if (err?.response?.status === 404 || err?.response?.data?.success) {
-        setGoats((prev) => prev.filter((g) => g._id !== id));
+      if (err?.response?.status === 404) {
+        setGoats((prev) =>
+          prev.filter((g) => {
+            const gid = String(g._id || g.id || "");
+            return gid !== String(id);
+          })
+        );
 
         toast.success(
           isHindi ? "लिस्टिंग हटा दी गई" : "Listing removed"
         );
+        router.refresh();
       } else {
         toast.error(
           err?.response?.data?.error ||

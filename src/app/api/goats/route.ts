@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import mongoose from "mongoose";
 import connectDB from "@/lib/db";
 import Goat from "@/models/Goat";
@@ -15,6 +16,9 @@ import {
 } from "@/lib/security";
 import { BREEDS } from "@/types";
 import { z } from "zod";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const hindiBreedMap: Record<string, string> = {
   "जमुनापारी": "Jamunapari",
@@ -138,23 +142,41 @@ export async function GET(req: NextRequest) {
       .limit(limit)
       .lean();
 
-    return NextResponse.json({
-      success: true,
-      data: goats || [],
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit) || 1,
+    return NextResponse.json(
+      {
+        success: true,
+        data: goats || [],
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit) || 1,
+        },
       },
-    });
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      }
+    );
   } catch (error) {
     console.error("Fetch goats error:", error);
-    return NextResponse.json({
-      success: true,
-      data: [],
-      pagination: { page: 1, limit: 12, total: 0, pages: 1 },
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        data: [],
+        pagination: { page: 1, limit: 12, total: 0, pages: 1 },
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      }
+    );
   }
 }
 
@@ -211,6 +233,11 @@ export async function POST(req: NextRequest) {
       views: 0,
       wishlistCount: 0,
     });
+
+    revalidatePath("/", "page");
+    revalidatePath("/shop", "page");
+    revalidatePath("/seller", "page");
+    revalidatePath("/", "layout");
 
     return NextResponse.json({ success: true, data: goat }, { status: 201 });
   } catch (error) {

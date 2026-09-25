@@ -992,8 +992,15 @@ export default function AdminDashboard() {
       const { data } = await axios.delete(`/api/goats/${id}`);
 
       if (data.success) {
-        setGoats((prev) => prev.filter((g) => g._id !== id));
+        const deletedId = data?.data?.id || id;
+        setGoats((prev) =>
+          prev.filter((g) => {
+            const gid = String(g._id || g.id || "");
+            return gid !== String(deletedId) && gid !== String(id);
+          })
+        );
         toast.success("Listing deleted");
+        router.refresh();
       }
     } catch {
       toast.error("Failed to delete listing");

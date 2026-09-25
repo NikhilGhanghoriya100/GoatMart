@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import connectDB from "@/lib/db";
 import Goat from "@/models/Goat";
 import {
@@ -13,6 +14,9 @@ import {
 } from "@/lib/security";
 import { BREEDS } from "@/types";
 import { z } from "zod";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 const updateGoatSchema = z.object({
   name: z.string().min(2).max(100).optional(),
@@ -51,7 +55,16 @@ export async function GET(
       return notFoundResponse("Goat not found");
     }
 
-    return NextResponse.json({ success: true, data: goat });
+    return NextResponse.json(
+      { success: true, data: goat },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      }
+    );
   } catch (error) {
     console.error("Get goat error:", error);
     return serverErrorResponse();
@@ -108,6 +121,13 @@ export async function PATCH(
     if (validData.videoUrl !== undefined) updateData.videoUrl = validData.videoUrl || undefined;
 
     const updated = await Goat.findByIdAndUpdate(id, updateData, { new: true }).lean();
+
+    revalidatePath("/", "page");
+    revalidatePath("/shop", "page");
+    revalidatePath(`/goat/${id}`, "page");
+    revalidatePath("/seller", "page");
+    revalidatePath("/", "layout");
+
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
     console.error("Update goat error:", error);
@@ -125,13 +145,13 @@ export async function DELETE(
 
     const { id } = await params;
     if (!isValidObjectId(id)) {
-      return NextResponse.json({ success: true, message: "Listing deleted successfully" });
+      return notFoundResponse("Goat not found");
     }
 
     await connectDB();
     const goat = await Goat.findById(id);
     if (!goat) {
-      return NextResponse.json({ success: true, message: "Listing deleted successfully" });
+      return notFoundResponse("Goat not found");
     }
 
     // Ownership Authorization: Only the listing's seller or an admin can delete
@@ -141,8 +161,32 @@ export async function DELETE(
       return forbiddenResponse("You are not authorized to delete this listing");
     }
 
-    await goat.deleteOne();
-    return NextResponse.json({ success: true, message: "Listing deleted successfully" });
+    const deleteResult = await goat.deleteOne();
+    if (!deleteResult || deleteResult.acknowledged === false) {
+      return serverErrorResponse("Failed to delete listing from database");
+    }
+
+    // Server-side cache invalidation for all affected routes and layouts
+    revalidatePath("/", "page");
+    revalidatePath("/shop", "page");
+    revalidatePath(`/goat/${id}`, "page");
+    revalidatePath("/seller", "page");
+    revalidatePath("/", "layout");
+
+    return NextResponse.json(
+      {
+        success: true,
+        message: "Listing deleted successfully",
+        data: { id },
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      }
+    );
   } catch (error) {
     console.error("Delete goat error:", error);
     return serverErrorResponse();
