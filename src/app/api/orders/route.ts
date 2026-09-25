@@ -82,38 +82,21 @@ export async function POST(req: NextRequest) {
       return badRequestResponse("You cannot purchase your own goat listing");
     }
 
-    // Atomically reserve the goat only if it is currently 'sale'
-    const reservedGoat = await Goat.findOneAndUpdate(
-      { _id: goatId, status: "sale" },
-      { $set: { status: "reserved" } },
-      { new: true }
-    );
-
-    if (!reservedGoat) {
-      return badRequestResponse(
-        goat.status === "sold"
-          ? "This goat has already been sold"
-          : "This goat is currently reserved by another buyer"
-      );
+    // Verify goat is currently available for purchase (status must be 'sale')
+    if (goat.status !== "sale") {
+      return badRequestResponse("This goat has already been sold");
     }
 
     const deliveryCharge =
-      typeof reservedGoat.deliveryCharge === "number" && reservedGoat.deliveryCharge >= 0
-        ? reservedGoat.deliveryCharge
+      typeof goat.deliveryCharge === "number" && goat.deliveryCharge >= 0
+        ? goat.deliveryCharge
         : 0;
 
     // Phase 2: Compute authoritative server-side financial snapshot
-    const financials = calculateOrderFinancials(reservedGoat.price, { deliveryCharge });
+    const financials = calculateOrderFinancials(goat.price, { deliveryCharge });
 
     const totalOrderAmount = financials.totalAmount ?? (financials.sellerBasePrice + (financials.deliveryCharge ?? 0));
-    let rzpOrder: any;
-    try {
-      rzpOrder = await createRazorpayOrder(totalOrderAmount, `goat_${goatId}`);
-    } catch (rzpErr) {
-      // Revert reservation if Razorpay order creation fails
-      await Goat.findByIdAndUpdate(goatId, { status: "sale" });
-      throw rzpErr;
-    }
+    const rzpOrder = await createRazorpayOrder(totalOrderAmount, `goat_${goatId}`);
 
     const sanitizedDelivery = {
       name: sanitizeString(delivery.name),
@@ -126,57 +109,48 @@ export async function POST(req: NextRequest) {
       note: delivery.note ? sanitizeString(delivery.note) : "",
     };
 
-    let order;
-    try {
-      order = await Order.create({
-        goat: goatId,
-        goatName: reservedGoat.name,
-        goatBreed: reservedGoat.breed,
-        goatImage: reservedGoat.images[0] || "",
-        seller: reservedGoat.seller,
-        sellerName: reservedGoat.sellerName,
-        customer: user.id,
-        customerName: user.name,
-        amount: financials.totalAmount,
+    const order = await Order.create({
+      goat: goatId,
+      goatName: goat.name,
+      goatBreed: goat.breed,
+      goatImage: goat.images[0] || "",
+      seller: goat.seller,
+      sellerName: goat.sellerName,
+      customer: user.id,
+      customerName: user.name,
+      amount: financials.totalAmount,
+      status: "pending",
+
+      // Phase 2: Permanent immutable financial snapshot
+      sellerBasePrice: financials.sellerBasePrice,
+      deliveryCharge: financials.deliveryCharge,
+      buyerPlatformFee: financials.buyerPlatformFee,
+      sellerDeliveryAmount: financials.sellerDeliveryAmount,
+      sellerGoatNet: financials.sellerGoatNet,
+      commissionRate: financials.commissionRate,
+      commissionAmount: financials.commissionAmount,
+      sellerNetPayable: financials.sellerNetPayable,
+      currency: financials.currency,
+      financialCalculationVersion: financials.financialCalculationVersion,
+      financialCalculatedAt: financials.financialCalculatedAt,
+
+      payment: {
+        razorpayOrderId: rzpOrder.id,
         status: "pending",
-
-        // Phase 2: Permanent immutable financial snapshot
-        sellerBasePrice: financials.sellerBasePrice,
-        deliveryCharge: financials.deliveryCharge,
-        buyerPlatformFee: financials.buyerPlatformFee,
-        sellerDeliveryAmount: financials.sellerDeliveryAmount,
-        sellerGoatNet: financials.sellerGoatNet,
-        commissionRate: financials.commissionRate,
-        commissionAmount: financials.commissionAmount,
-        sellerNetPayable: financials.sellerNetPayable,
-        currency: financials.currency,
-        financialCalculationVersion: financials.financialCalculationVersion,
-        financialCalculatedAt: financials.financialCalculatedAt,
-
-        payment: {
-          razorpayOrderId: rzpOrder.id,
-          status: "pending",
+      },
+      delivery: sanitizedDelivery,
+      timeline: [
+        {
+          s: "Order Placed",
+          d: new Date().toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
+          done: true,
         },
-        delivery: sanitizedDelivery,
-        timeline: [
-          {
-            s: "Order Placed",
-            d: new Date().toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
-            done: true,
-          },
-          { s: "Payment Confirmed", d: "", done: false },
-          { s: "Dispatched", d: "", done: false },
-          { s: "Out for Delivery", d: "", done: false },
-          { s: "Delivered", d: "", done: false },
-        ],
-      });
-      // Link the reserved goat to this order
-      await Goat.findByIdAndUpdate(goatId, { $set: { currentOrderId: order._id } });
-    } catch (dbErr) {
-      // Revert reservation if database order record creation fails
-      await Goat.findByIdAndUpdate(goatId, { status: "sale", currentOrderId: null });
-      throw dbErr;
-    }
+        { s: "Payment Confirmed", d: "", done: false },
+        { s: "Dispatched", d: "", done: false },
+        { s: "Out for Delivery", d: "", done: false },
+        { s: "Delivered", d: "", done: false },
+      ],
+    });
 
     // -------------------------------------------------------------------------
     // AUDIT: payment_initiated

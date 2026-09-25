@@ -120,17 +120,15 @@ export default function GoatCard({ goat }: { goat: Goat }) {
             className={`px-2.5 py-1 rounded-full text-[9px] sm:text-[10px] font-extrabold font-sans tracking-wide uppercase shadow-md flex items-center gap-1.5 truncate ${
               sold
                 ? "bg-zinc-800 text-zinc-300 border border-zinc-700"
-                : reserved
-                ? "bg-amber-500 text-white"
                 : "bg-emerald-500 text-white shadow-emerald-500/30"
             }`}
           >
             <span
               className={`w-1.5 h-1.5 rounded-full ${
-                sold ? "bg-zinc-400" : reserved ? "bg-amber-200" : "bg-white animate-pulse"
+                sold ? "bg-zinc-400" : "bg-white animate-pulse"
               }`}
             />
-            {sold ? t.statusSold : reserved ? t.statusReserved : isHindi ? "बिक्री के लिए उपलब्ध" : "FOR SALE"}
+            {sold ? t.statusSold : isHindi ? "बिक्री के लिए उपलब्ध" : "FOR SALE"}
           </span>
         </div>
 

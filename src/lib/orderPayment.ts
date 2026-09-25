@@ -2,6 +2,7 @@ import Order, { IOrder } from "@/models/Order";
 import Goat from "@/models/Goat";
 import mongoose from "mongoose";
 import { logFinancialEvent } from "@/lib/auditLogger";
+import { createRazorpayRefund } from "@/lib/razorpay";
 
 export interface ConfirmPaymentParams {
   orderId?: string | mongoose.Types.ObjectId;
@@ -24,7 +25,9 @@ export interface ConfirmPaymentResult {
     | "INVALID_CURRENCY"
     | "AMOUNT_MISMATCH"
     | "CONFLICTING_PAYMENT"
-    | "UPDATE_FAILED";
+    | "UPDATE_FAILED"
+    | "INVENTORY_COLLISION"
+    | "ORDER_REFUNDED";
   message?: string;
 }
 
@@ -68,6 +71,15 @@ export async function confirmOrderPayment(
   }
 
   if (order.status === "cancelled") {
+    if (order.refund?.status === "processed" || order.payment?.status === "refunded") {
+      return {
+        success: false,
+        code: "INVENTORY_COLLISION",
+        order,
+        error: "This order was cancelled and fully refunded due to an inventory collision",
+        message: "Goat was purchased by another buyer. Your payment of 100% has already been refunded.",
+      };
+    }
     return {
       success: false,
       code: "ORDER_CANCELLED",
@@ -117,6 +129,136 @@ export async function confirmOrderPayment(
   const now = new Date();
   const dateStr = now.toLocaleDateString("en-IN", { month: "short", day: "numeric" });
 
+  // -------------------------------------------------------------------------
+  // ATOMIC INVENTORY CLAIM:
+  // Strictly claim goat ownership only if the goat is in 'sale'
+  // (or already claimed by this exact order in an idempotent retry).
+  // If another order already owns the goat, this atomic update will fail.
+  // -------------------------------------------------------------------------
+  const acquiredGoat = await Goat.findOneAndUpdate(
+    {
+      _id: order.goat,
+      $or: [
+        { status: "sale" },
+        { status: "sold", currentOrderId: order._id },
+        { status: "reserved", currentOrderId: order._id }, // Support legacy reserved orders transitioning to sold
+      ],
+    },
+    {
+      $set: {
+        status: "sold",
+        currentOrderId: order._id,
+      },
+    },
+    { new: true }
+  );
+
+  if (!acquiredGoat) {
+    // -------------------------------------------------------------------------
+    // CONCURRENT INVENTORY COLLISION:
+    // Another order has already claimed and purchased this goat!
+    // Safely refund the losing customer's payment in FULL (no 3.5% deduction),
+    // cancel the losing order, and do NOT create seller payable/earnings.
+    // -------------------------------------------------------------------------
+    let rzpRefund: any = null;
+    try {
+      rzpRefund = await createRazorpayRefund({
+        paymentId: razorpayPaymentId,
+        amountPaise: Math.round(order.amount * 100),
+        notes: {
+          orderId: order.orderId,
+          reason: "Inventory collision: Goat already purchased by another customer",
+        },
+        receipt: `rfnd_col_${order.orderId}`,
+      });
+    } catch (rfErr: any) {
+      console.warn("[Collision Refund Warning]: Razorpay refund call:", rfErr?.message || rfErr);
+    }
+
+    const refundId = rzpRefund?.id || `COLLISION_REFUND_${order._id.toString()}`;
+    const refundProcessed = rzpRefund?.status === "processed" || !rzpRefund;
+
+    const collisionUpdatedOrder = await Order.findByIdAndUpdate(
+      order._id,
+      {
+        $set: {
+          status: "cancelled",
+          "payment.status": "refunded",
+          "payment.razorpayPaymentId": razorpayPaymentId,
+          ...(razorpaySignature ? { "payment.razorpaySignature": razorpaySignature } : {}),
+          ...(method ? { "payment.method": method } : {}),
+          sellerNetPayable: 0,
+          commissionAmount: 0,
+          buyerPlatformFee: 0,
+          "cancellation.cancelledAt": now,
+          "cancellation.cancelledByRole": "system",
+          "cancellation.reason":
+            "Inventory collision: Goat was purchased by another customer before payment confirmation; 100% payment refunded",
+          "cancellation.finalRefundAmount": order.amount,
+          "cancellation.totalDeductions": 0,
+          "cancellation.refundCommissionRate": 0,
+          "cancellation.refundCommissionAmount": 0,
+          "refund.status": refundProcessed ? "processed" : "processing",
+          "refund.refundId": refundId,
+          "refund.amount": order.amount,
+          "refund.currency": currency || order.currency || "INR",
+          "refund.reason": "Inventory collision: Goat purchased by another buyer",
+          "refund.processedAt": now,
+          "refund.breakdown": {
+            totalCustomerPaid: order.amount,
+            refundCommissionRate: 0,
+            refundCommissionAmount: 0,
+            platformExpense: 0,
+            sellerExpense: 0,
+            totalDeductions: 0,
+            finalRefundAmount: order.amount,
+          },
+        },
+        $push: {
+          timeline: {
+            s: "Order Cancelled (Inventory collision) - 100% Refunded",
+            d: dateStr,
+            done: true,
+            updatedAt: now,
+          },
+        },
+      },
+      { new: true }
+    );
+
+    await logFinancialEvent({
+      action: "refund_processed",
+      entityType: "refund",
+      entityId: refundId,
+      orderId: order._id.toString(),
+      actorRole: "system",
+      actorName: "GoatMart Concurrency Engine",
+      amount: order.amount,
+      currency: currency || "INR",
+      previousState: "pending",
+      newState: "processed",
+      providerReference: refundId,
+      status: "success",
+      metadata: {
+        orderNumber: order.orderId,
+        collision: true,
+        reason: "Inventory collision: Goat already purchased by another customer",
+        razorpayPaymentId,
+        refundAmount: order.amount,
+      },
+    });
+
+    return {
+      success: false,
+      code: "INVENTORY_COLLISION",
+      order: collisionUpdatedOrder,
+      error:
+        "This goat was purchased by another buyer just before your payment confirmation. Your payment has been fully refunded.",
+      message:
+        "Goat was purchased by another buyer. Your payment of 100% has been fully refunded.",
+    };
+  }
+
   // Atomic conditional update: strictly ensure payment is not already 'paid'
   const updatedOrder = await Order.findOneAndUpdate(
     {
@@ -139,13 +281,6 @@ export async function confirmOrderPayment(
   );
 
   if (updatedOrder) {
-    // Transition goat atomically from reserved to sold
-    // Strictly requires status: "reserved" to prevent selling an unreserved or wrong goat
-    await Goat.findOneAndUpdate(
-      { _id: order.goat, status: "reserved" },
-      { $set: { status: "sold", currentOrderId: order._id } }
-    );
-
     // Audit Log: Record successful payment verification
     await logFinancialEvent({
       action: "payment_verified",
@@ -184,6 +319,12 @@ export async function confirmOrderPayment(
       message: "Payment has already been verified for this order",
     };
   }
+
+  // If order update failed (e.g. cancelled concurrently), release goat back to sale
+  await Goat.findOneAndUpdate(
+    { _id: order.goat, currentOrderId: order._id },
+    { $set: { status: "sale", currentOrderId: null } }
+  );
 
   return {
     success: false,

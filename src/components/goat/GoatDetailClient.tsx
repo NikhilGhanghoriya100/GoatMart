@@ -950,15 +950,11 @@ export default function GoatDetailClient({ goat }: { goat: Goat }) {
                   className={`px-3.5 py-1.5 rounded-full text-xs font-black font-sans tracking-wider uppercase shadow-md ${
                     sold
                       ? "bg-zinc-900 text-white border border-zinc-700"
-                      : reserved
-                      ? "bg-amber-600 text-white"
                       : "bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 border border-zinc-800 dark:border-zinc-200"
                   }`}
                 >
                   {sold
                     ? t.statusSold
-                    : reserved
-                    ? t.statusReserved
                     : t.statusForSale}
                 </span>
 
@@ -1250,16 +1246,16 @@ export default function GoatDetailClient({ goat }: { goat: Goat }) {
 
               <button
                 type="button"
-                disabled={sold || reserved}
+                disabled={sold}
                 onClick={() =>
-                  !sold && !reserved
+                  !sold
                     ? session
                       ? setCheckoutOpen(true)
                       : router.push("/login")
                     : null
                 }
                 className={`flex-[1.5] py-4 rounded-full text-sm font-bold font-sans flex items-center justify-center gap-2 shadow-xl transition-all ${
-                  sold || reserved
+                  sold
                     ? "bg-zinc-200 dark:bg-zinc-800 text-zinc-400 cursor-not-allowed"
                     : "bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 hover:bg-zinc-800 dark:hover:bg-zinc-100 hover:scale-105"
                 }`}
@@ -1269,8 +1265,6 @@ export default function GoatDetailClient({ goat }: { goat: Goat }) {
                 <span>
                   {sold
                     ? t.soldOut
-                    : reserved
-                    ? t.statusReserved
                     : `${t.buyNow} • ${fmt(goat.price)}`}
                 </span>
               </button>
@@ -1301,16 +1295,16 @@ export default function GoatDetailClient({ goat }: { goat: Goat }) {
 
           <button
             type="button"
-            disabled={sold || reserved}
+            disabled={sold}
             onClick={() =>
-              !sold && !reserved
+              !sold
                 ? session
                   ? setCheckoutOpen(true)
                   : router.push("/login")
                 : null
             }
             className={`flex-[1.35] h-12 rounded-2xl text-sm font-bold font-sans flex items-center justify-center gap-2 active:scale-[0.98] transition-transform ${
-              sold || reserved
+              sold
                 ? "bg-zinc-200 dark:bg-zinc-800 text-zinc-400 cursor-not-allowed"
                 : "bg-zinc-950 text-white dark:bg-white dark:text-zinc-950"
             }`}
@@ -1320,8 +1314,6 @@ export default function GoatDetailClient({ goat }: { goat: Goat }) {
             <span>
               {sold
                 ? t.soldOut
-                : reserved
-                ? t.statusReserved
                 : `${t.buyNow} • ${fmt(goat.price)}`}
             </span>
           </button>

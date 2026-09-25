@@ -120,6 +120,17 @@ export async function POST(req: NextRequest) {
     });
 
     if (!confirmation.success) {
+      if (confirmation.code === "INVENTORY_COLLISION") {
+        return NextResponse.json(
+          {
+            success: false,
+            code: "INVENTORY_COLLISION",
+            error: confirmation.error,
+            message: confirmation.message,
+          },
+          { status: 409 }
+        );
+      }
       return badRequestResponse(confirmation.error || "Payment confirmation failed");
     }
 
