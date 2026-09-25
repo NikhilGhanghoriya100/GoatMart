@@ -1596,6 +1596,10 @@ import {
   Camera,
   Video,
   DollarSign,
+  CreditCard,
+  CheckCircle2,
+  AlertCircle,
+  Phone,
 } from "lucide-react";
 
 function StatCard({ icon, val, lbl, sub }: any) {
@@ -1631,6 +1635,7 @@ const EMPTY_GOAT = {
   weight: "",
   age: "",
   price: "",
+  deliveryCharge: "0",
   health: "Excellent",
   vaccinated: true,
   desc: "",
@@ -1656,6 +1661,7 @@ export default function SellerDashboard() {
     { id: "chats", ic: "💬", l: isHindi ? "पूछताछ" : "Inquiries" },
     { id: "analytics", ic: "📈", l: isHindi ? "एनालिटिक्स" : "Analytics" },
     { id: "earnings", ic: "💰", l: isHindi ? "कमाई" : "Earnings" },
+    { id: "payment-details", ic: "💳", l: isHindi ? "बैंक और UPI विवरण" : "Payment & Bank Details" },
     { id: "profile", ic: "👤", l: isHindi ? "फार्म प्रोफाइल" : "Farm Profile" },
   ];
 
@@ -1706,6 +1712,150 @@ export default function SellerDashboard() {
       .finally(() => setEarningsLoading(false));
   };
 
+  const [payoutsHistory, setPayoutsHistory] = useState<any[]>([]);
+  const [payoutsLoading, setPayoutsLoading] = useState(false);
+
+  const fetchPayoutsHistory = () => {
+    setPayoutsLoading(true);
+    axios
+      .get("/api/seller/payouts")
+      .then((res) => {
+        if (res.data?.success) {
+          setPayoutsHistory(res.data.data || []);
+        }
+      })
+      .catch((err) => {
+        console.error("Seller payouts load err:", err);
+      })
+      .finally(() => setPayoutsLoading(false));
+  };
+
+  const [sellerPaymentDetails, setSellerPaymentDetails] = useState<any>({
+    paymentMethod: "UPI",
+    phone: "",
+    upiId: "",
+    accountHolderName: "",
+    bankName: "",
+    accountNumber: "",
+    confirmAccountNumber: "",
+    ifscCode: "",
+    paymentNote: "",
+    accountNumberMasked: "",
+    verificationStatus: "none",
+    rejectionReason: "",
+  });
+  const [paymentDetailsLoading, setPaymentDetailsLoading] = useState(false);
+  const [paymentDetailsSaving, setPaymentDetailsSaving] = useState(false);
+
+  const fetchPaymentDetails = () => {
+    setPaymentDetailsLoading(true);
+    axios
+      .get("/api/seller/payment-details")
+      .then((res) => {
+        if (res.data?.success && res.data.data) {
+          const d = res.data.data;
+          setSellerPaymentDetails((prev: any) => ({
+            ...prev,
+            paymentMethod: d.paymentMethod === "BANK" ? "BANK" : "UPI",
+            phone: d.phone || "",
+            upiId: d.upiId || "",
+            accountHolderName: d.accountHolderName || "",
+            bankName: d.bankName || "",
+            accountNumberMasked: d.accountNumberMasked || "",
+            ifscCode: d.ifscCode || "",
+            paymentNote: d.paymentNote || "",
+            verificationStatus: d.verificationStatus || "none",
+            rejectionReason: d.rejectionReason || "",
+          }));
+        }
+      })
+      .catch((err) => {
+        console.error("Seller payment details fetch error:", err);
+      })
+      .finally(() => setPaymentDetailsLoading(false));
+  };
+
+  const handleSavePaymentDetails = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanPhone = (sellerPaymentDetails.phone || "").replace(/\D/g, "");
+    if (cleanPhone.length !== 10) {
+      toast.error(
+        isHindi
+          ? "कृपया 10-अंकीय मान्य भारतीय मोबाइल नंबर दर्ज करें"
+          : "Please provide a valid 10-digit Indian phone number"
+      );
+      return;
+    }
+
+    if (sellerPaymentDetails.paymentMethod === "UPI") {
+      if (!sellerPaymentDetails.upiId || !sellerPaymentDetails.upiId.includes("@")) {
+        toast.error(
+          isHindi
+            ? "कृपया मान्य UPI ID दर्ज करें (उदा. seller@upi)"
+            : "Please enter a valid UPI ID (e.g. seller@okaxis)"
+        );
+        return;
+      }
+    } else {
+      if (!sellerPaymentDetails.accountHolderName?.trim()) {
+        toast.error(isHindi ? "खाताधारक का नाम आवश्यक है" : "Account holder name is required");
+        return;
+      }
+      if (!sellerPaymentDetails.bankName?.trim()) {
+        toast.error(isHindi ? "बैंक का नाम आवश्यक है" : "Bank name is required");
+        return;
+      }
+      if (!sellerPaymentDetails.accountNumber) {
+        toast.error(isHindi ? "खाता संख्या आवश्यक है" : "Account number is required");
+        return;
+      }
+      if (sellerPaymentDetails.accountNumber !== sellerPaymentDetails.confirmAccountNumber) {
+        toast.error(isHindi ? "खाता संख्या मेल नहीं खाती" : "Account number confirmation does not match");
+        return;
+      }
+      if (!sellerPaymentDetails.ifscCode || sellerPaymentDetails.ifscCode.trim().length !== 11) {
+        toast.error(
+          isHindi ? "मान्य 11-अंकीय IFSC कोड आवश्यक है" : "Valid 11-character IFSC code is required"
+        );
+        return;
+      }
+    }
+
+    setPaymentDetailsSaving(true);
+    try {
+      const payload: any = {
+        paymentMethod: sellerPaymentDetails.paymentMethod,
+        phone: cleanPhone,
+        paymentNote: sellerPaymentDetails.paymentNote?.trim() || undefined,
+      };
+
+      if (sellerPaymentDetails.paymentMethod === "UPI") {
+        payload.upiId = sellerPaymentDetails.upiId.trim();
+      } else {
+        payload.accountHolderName = sellerPaymentDetails.accountHolderName.trim();
+        payload.bankName = sellerPaymentDetails.bankName.trim();
+        payload.accountNumber = sellerPaymentDetails.accountNumber.trim();
+        payload.ifscCode = sellerPaymentDetails.ifscCode.trim().toUpperCase();
+      }
+
+      const res = await axios.post("/api/seller/payment-details", payload);
+      if (res.data?.success) {
+        toast.success(
+          isHindi
+            ? "भुगतान विवरण सुरक्षित रूप से सहेजा गया और सत्यापन हेतु भेजा गया!"
+            : "Payment details saved & submitted for admin verification!"
+        );
+        fetchPaymentDetails();
+      } else {
+        toast.error(res.data?.error || "Failed to save payment details");
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || "Failed to save payment details");
+    } finally {
+      setPaymentDetailsSaving(false);
+    }
+  };
+
   const [farmProfile, setFarmProfile] = useState({
     farmName: "",
     location: "",
@@ -1727,7 +1877,7 @@ export default function SellerDashboard() {
   const [editModal, setEditModal] = useState(false);
   const [selectedGoatId, setSelectedGoatId] = useState<string | null>(null);
   const [formData, setFormData] = useState(EMPTY_GOAT);
-  const listingEstimate = calculateListingFeeEstimate(formData.price);
+  const listingEstimate = calculateListingFeeEstimate(formData.price, formData.deliveryCharge);
   const [uploadingImg, setUploadingImg] = useState(false);
   const [uploadingVid, setUploadingVid] = useState(false);
   const [savingGoat, setSavingGoat] = useState(false);
@@ -1824,6 +1974,8 @@ export default function SellerDashboard() {
   useEffect(() => {
     fetchDashboardData();
     fetchEarnings();
+    fetchPaymentDetails();
+    fetchPayoutsHistory();
   }, [session]);
 
   const toggleStatus = async (id: string, current: string) => {
@@ -1925,6 +2077,7 @@ export default function SellerDashboard() {
       weight: String(goat.weight || 35),
       age: goat.age || (isHindi ? "12 महीने" : "12 months"),
       price: String(goat.price || ""),
+      deliveryCharge: String(goat.deliveryCharge ?? 0),
       health: goat.health || "Excellent",
       vaccinated: !!goat.vaccinated,
       desc: goat.desc || "",
@@ -2034,6 +2187,7 @@ export default function SellerDashboard() {
           formData.age.trim() ||
           (isHindi ? "12 महीने" : "12 months"),
         price: Number(formData.price),
+        deliveryCharge: Math.max(0, Number(formData.deliveryCharge) || 0),
         health: formData.health,
         vaccinated: formData.vaccinated,
 
@@ -2181,14 +2335,43 @@ export default function SellerDashboard() {
     }
   };
 
-  const totalRevenue = orders
-    .filter(
-      (o) =>
-        o.payment?.status === "paid" ||
-        o.status === "delivered" ||
-        o.status === "payment_confirmed"
-    )
-    .reduce((acc, o) => acc + (o.amount || 0), 0);
+  const paidOrders = orders.filter(
+    (o) =>
+      o.payment?.status === "paid" ||
+      o.status === "delivered" ||
+      o.status === "payment_confirmed"
+  );
+
+  const totalRevenue = paidOrders.reduce(
+    (acc, o) =>
+      acc +
+      (typeof o.sellerNetPayable === "number"
+        ? o.sellerNetPayable
+        : typeof o.amount === "number"
+        ? o.amount * 0.98
+        : 0),
+    0
+  );
+
+  const totalGoatNet = paidOrders.reduce(
+    (acc, o) =>
+      acc +
+      (typeof o.sellerGoatNet === "number"
+        ? o.sellerGoatNet
+        : typeof o.sellerBasePrice === "number"
+        ? o.sellerBasePrice * 0.98
+        : (o.amount || 0) * 0.98),
+    0
+  );
+
+  const totalDeliveryRevenue = paidOrders.reduce(
+    (acc, o) =>
+      acc +
+      (typeof o.sellerDeliveryAmount === "number"
+        ? o.sellerDeliveryAmount
+        : o.deliveryCharge || 0),
+    0
+  );
 
   const activeCount = goats.filter(
     (g) => g.status === "sale"
@@ -3594,6 +3777,442 @@ export default function SellerDashboard() {
                   </div>
                 )}
               </div>
+
+              {/* Read-only Payout History */}
+              <div className="rounded-2xl border border-zinc-800 bg-[#141414] overflow-hidden mt-6">
+                <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
+                  <div>
+                    <h3 className="font-bold text-sm sm:text-base text-white font-serif flex items-center gap-2">
+                      <span>💳</span>
+                      <span>{isHindi ? "पेआउट इतिहास (Payout History)" : "Official Payout History"}</span>
+                    </h3>
+                    <p className="text-[11px] text-gray-400 font-sans mt-0.5">
+                      {isHindi
+                        ? "एडमिन द्वारा किए गए आधिकारिक मैन्युअल बैंक/UPI ट्रांसफ़र (केवल पठनीय)"
+                        : "Authoritative external bank & UPI payouts recorded by GoatMart admin (read-only)."}
+                    </p>
+                  </div>
+                  <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-zinc-800 text-gray-300 font-sans font-medium">
+                    {payoutsHistory.length} {isHindi ? "पेआउट" : "records"}
+                  </span>
+                </div>
+
+                {payoutsLoading && payoutsHistory.length === 0 ? (
+                  <div className="p-8 text-center text-gray-400 font-sans text-xs">
+                    <RefreshCw size={20} className="animate-spin text-[#c8a96e] mx-auto mb-2" />
+                    <p>{isHindi ? "पेआउट इतिहास लोड हो रहा है..." : "Loading payout history..."}</p>
+                  </div>
+                ) : payoutsHistory.length === 0 ? (
+                  <div className="p-8 text-center text-gray-500 font-sans text-xs">
+                    {isHindi ? "अभी तक कोई पेआउट दर्ज नहीं हुआ है" : "No payout disbursements recorded yet."}
+                  </div>
+                ) : (
+                  <div className="divide-y divide-zinc-800/60">
+                    {payoutsHistory.map((p) => {
+                      const isPaid = p.rawStatus === "paid";
+                      return (
+                        <div
+                          key={p.id}
+                          className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-zinc-900/30 transition-colors"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono font-bold text-[#c8a96e] text-xs">{p.orderId}</span>
+                              <span className="text-white text-sm font-serif font-bold">{p.goatName}</span>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-gray-300">
+                                {p.goatBreed}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-gray-400 font-sans mt-1 flex items-center gap-2 flex-wrap">
+                              <span>Method: <strong className="text-gray-200">{p.method}</strong></span>
+                              <span>•</span>
+                              <span>Ref / UTR: <strong className="font-mono text-gray-200">{p.reference}</strong></span>
+                              {p.paidDate && (
+                                <>
+                                  <span>•</span>
+                                  <span>
+                                    Paid on:{" "}
+                                    {new Date(p.paidDate).toLocaleDateString("en-IN", {
+                                      day: "numeric",
+                                      month: "short",
+                                      year: "numeric",
+                                    })}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-4 flex-wrap justify-between md:justify-end">
+                            <div className="text-left md:text-right">
+                              <div className="text-[10px] uppercase font-sans text-gray-400 font-semibold">
+                                {isHindi ? "पेआउट राशि" : "Paid Amount"}
+                              </div>
+                              <div className="text-base font-bold text-[#c8a96e] font-serif">
+                                {formatCurrencyINR(p.sellerPayable)}
+                              </div>
+                            </div>
+
+                            <span
+                              className={`text-[10px] font-bold px-2.5 py-1 rounded-full uppercase tracking-wider ${
+                                isPaid
+                                  ? "bg-emerald-950/60 text-emerald-400 border border-emerald-800/40"
+                                  : "bg-amber-950/60 text-amber-400 border border-amber-800/40"
+                              }`}
+                            >
+                              {p.status}
+                            </span>
+
+                            {isPaid && (
+                              <a
+                                href={`/api/documents/payout-receipt/${p.id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-3 py-1.5 rounded-xl border border-zinc-700 hover:border-[#c8a96e] text-gray-300 hover:text-white text-xs font-sans transition-colors flex items-center gap-1.5"
+                                title="Download Payout Receipt"
+                              >
+                                <span>📄</span>
+                                <span>{isHindi ? "रसीद" : "Receipt"}</span>
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ================= PAYMENT & BANK DETAILS ================= */}
+          {tab === "payment-details" && (
+            <div className="w-full max-w-3xl rounded-2xl border border-zinc-800 bg-[#141414] p-4 sm:p-6 lg:p-8 space-y-6">
+              {/* Header */}
+              <div className="pb-4 border-b border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-bold text-white font-serif flex items-center gap-2.5">
+                    <CreditCard size={22} className="text-[#c8a96e]" />
+                    <span>{isHindi ? "बैंक और UPI भुगतान विवरण" : "Seller Payout & Bank Details"}</span>
+                  </h2>
+                  <p className="text-xs text-gray-400 font-sans mt-1">
+                    {isHindi
+                      ? "बिक्री राशि सीधे आपके बैंक खाते या UPI में एडमिन द्वारा ट्रांसफर की जाएगी।"
+                      : "Configure your verified bank or UPI destination where GoatMart administration transfers your sale proceeds."}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={fetchPaymentDetails}
+                  disabled={paymentDetailsLoading}
+                  className="self-start sm:self-auto px-3.5 py-1.5 rounded-xl border border-zinc-700 bg-zinc-900 text-gray-300 font-sans text-xs hover:border-[#c8a96e] transition-colors flex items-center gap-1.5"
+                >
+                  <RefreshCw size={13} className={paymentDetailsLoading ? "animate-spin text-[#c8a96e]" : ""} />
+                  <span>{isHindi ? "रिफ्रेश" : "Refresh"}</span>
+                </button>
+              </div>
+
+              {/* Verification Status Banner */}
+              <div
+                className={`p-4 rounded-2xl border flex items-start gap-3.5 ${
+                  sellerPaymentDetails.verificationStatus === "approved"
+                    ? "bg-emerald-950/30 border-emerald-800/40 text-emerald-200"
+                    : sellerPaymentDetails.verificationStatus === "pending"
+                    ? "bg-amber-950/30 border-amber-800/40 text-amber-200"
+                    : sellerPaymentDetails.verificationStatus === "rejected"
+                    ? "bg-red-950/30 border-red-800/40 text-red-200"
+                    : "bg-zinc-900 border-zinc-800 text-gray-300"
+                }`}
+              >
+                {sellerPaymentDetails.verificationStatus === "approved" ? (
+                  <CheckCircle2 size={22} className="text-emerald-400 flex-shrink-0 mt-0.5" />
+                ) : sellerPaymentDetails.verificationStatus === "rejected" ? (
+                  <AlertCircle size={22} className="text-red-400 flex-shrink-0 mt-0.5" />
+                ) : (
+                  <Clock size={22} className="text-amber-400 flex-shrink-0 mt-0.5" />
+                )}
+
+                <div className="text-xs space-y-1">
+                  <div className="font-bold text-sm">
+                    {sellerPaymentDetails.verificationStatus === "approved"
+                      ? isHindi
+                        ? "✓ भुगतान विवरण सत्यापित एवं स्वीकृत"
+                        : "✓ Verified & Approved for Payouts"
+                      : sellerPaymentDetails.verificationStatus === "pending"
+                      ? isHindi
+                        ? "⏳ एडमिन सत्यापन लंबित"
+                        : "⏳ Pending Admin Verification"
+                      : sellerPaymentDetails.verificationStatus === "rejected"
+                      ? isHindi
+                        ? "⚠️ विवरण अस्वीकृत"
+                        : "⚠️ Payment Details Rejected"
+                      : isHindi
+                      ? "विवरण अभी दर्ज नहीं किया गया है"
+                      : "Not Submitted Yet"}
+                  </div>
+                  <p className="text-gray-400">
+                    {sellerPaymentDetails.verificationStatus === "approved"
+                      ? isHindi
+                        ? "आपके विवरण सत्यापित हैं। बकरियों की सफल डिलीवरी के बाद एडमिन द्वारा सीधे इसी खाते में भुगतान भेजा जाएगा।"
+                        : "Your payout details have been validated by admin. Manual sale disbursements will be sent to this destination."
+                      : sellerPaymentDetails.verificationStatus === "rejected"
+                      ? `${isHindi ? "अस्वीकृति का कारण: " : "Rejection Reason: "} ${sellerPaymentDetails.rejectionReason || "Please verify credentials and resubmit."}`
+                      : isHindi
+                      ? "कम से कम एक मान्य भुगतान माध्यम (UPI या बैंक खाता) और 10-अंकीय फ़ोन नंबर आवश्यक है।"
+                      : "Provide at least one valid payment method (UPI or Bank) and phone number to receive payouts."}
+                  </p>
+                </div>
+              </div>
+
+              {/* Form */}
+              <form onSubmit={handleSavePaymentDetails} className="space-y-5">
+                {/* Method Selector */}
+                <div>
+                  <label className="text-xs font-bold text-gray-300 font-sans mb-2 block">
+                    {isHindi ? "प्राथमिक भुगतान माध्यम चुनें *" : "Select Payout Method *"}
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSellerPaymentDetails((p: any) => ({ ...p, paymentMethod: "UPI" }))
+                      }
+                      className={`p-3.5 rounded-xl border text-left flex items-center gap-3 transition-all ${
+                        sellerPaymentDetails.paymentMethod === "UPI"
+                          ? "border-[#c8a96e] bg-[#c8a96e]/10 text-white"
+                          : "border-zinc-800 bg-[#111] text-gray-400 hover:border-zinc-700"
+                      }`}
+                    >
+                      <span className="text-xl">⚡</span>
+                      <div>
+                        <div className="font-bold text-xs text-white">UPI ID</div>
+                        <div className="text-[10px] text-gray-400">Google Pay / PhonePe / Paytm</div>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSellerPaymentDetails((p: any) => ({ ...p, paymentMethod: "BANK" }))
+                      }
+                      className={`p-3.5 rounded-xl border text-left flex items-center gap-3 transition-all ${
+                        sellerPaymentDetails.paymentMethod === "BANK"
+                          ? "border-[#c8a96e] bg-[#c8a96e]/10 text-white"
+                          : "border-zinc-800 bg-[#111] text-gray-400 hover:border-zinc-700"
+                      }`}
+                    >
+                      <span className="text-xl">🏦</span>
+                      <div>
+                        <div className="font-bold text-xs text-white">Bank Account</div>
+                        <div className="text-[10px] text-gray-400">NEFT / IMPS / RTGS Direct</div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Phone Number (Common & Required) */}
+                <div>
+                  <label className="text-xs font-bold text-gray-300 font-sans mb-1 block">
+                    {isHindi ? "विक्रेता संपर्क फ़ोन नंबर (पेआउट सूचना हेतु) *" : "Seller Phone Number (For Payout Alerts) *"}
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 text-xs font-mono">
+                      +91
+                    </span>
+                    <input
+                      type="tel"
+                      maxLength={10}
+                      value={sellerPaymentDetails.phone}
+                      onChange={(e) =>
+                        setSellerPaymentDetails((p: any) => ({
+                          ...p,
+                          phone: e.target.value.replace(/\D/g, ""),
+                        }))
+                      }
+                      placeholder={isHindi ? "10-अंकीय मोबाइल नंबर" : "10-digit mobile number"}
+                      className={`${inp} pl-12 font-mono`}
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Conditional Fields: UPI */}
+                {sellerPaymentDetails.paymentMethod === "UPI" && (
+                  <div className="space-y-4 p-4 rounded-2xl bg-zinc-900/40 border border-zinc-800/80">
+                    <div>
+                      <label className="text-xs font-bold text-gray-300 font-sans mb-1 block">
+                        {isHindi ? "UPI ID (VPA) *" : "UPI ID (VPA) *"}
+                      </label>
+                      <input
+                        type="text"
+                        value={sellerPaymentDetails.upiId}
+                        onChange={(e) =>
+                          setSellerPaymentDetails((p: any) => ({ ...p, upiId: e.target.value }))
+                        }
+                        placeholder="e.g. 9876543210@upi or farmname@okhdfcbank"
+                        className={inp}
+                        required
+                      />
+                      <span className="text-[10px] text-gray-500 font-sans mt-1 block">
+                        {isHindi
+                          ? "कृपया सही UPI ID लिखें जिस पर आप बकरी बिक्री का पैसा प्राप्त करना चाहते हैं।"
+                          : "Ensure this UPI ID is active on PhonePe, GPay, Paytm, or your banking app."}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Conditional Fields: Bank Account */}
+                {sellerPaymentDetails.paymentMethod === "BANK" && (
+                  <div className="space-y-4 p-4 rounded-2xl bg-zinc-900/40 border border-zinc-800/80">
+                    {sellerPaymentDetails.accountNumberMasked && (
+                      <div className="text-xs text-gray-400 font-sans mb-2">
+                        {isHindi ? "वर्तमान सहेजा गया खाता:" : "Currently Saved Account:"}{" "}
+                        <span className="font-mono text-[#c8a96e] font-bold">
+                          {sellerPaymentDetails.accountNumberMasked}
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs font-bold text-gray-300 font-sans mb-1 block">
+                          {isHindi ? "खाताधारक का नाम *" : "Account Holder Name *"}
+                        </label>
+                        <input
+                          type="text"
+                          value={sellerPaymentDetails.accountHolderName}
+                          onChange={(e) =>
+                            setSellerPaymentDetails((p: any) => ({
+                              ...p,
+                              accountHolderName: e.target.value,
+                            }))
+                          }
+                          placeholder={isHindi ? "पासबुक के अनुसार नाम" : "As per bank passbook"}
+                          className={inp}
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-gray-300 font-sans mb-1 block">
+                          {isHindi ? "बैंक का नाम *" : "Bank Name *"}
+                        </label>
+                        <input
+                          type="text"
+                          value={sellerPaymentDetails.bankName}
+                          onChange={(e) =>
+                            setSellerPaymentDetails((p: any) => ({
+                              ...p,
+                              bankName: e.target.value,
+                            }))
+                          }
+                          placeholder="e.g. State Bank of India, HDFC Bank"
+                          className={inp}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs font-bold text-gray-300 font-sans mb-1 block">
+                          {isHindi ? "बैंक खाता संख्या *" : "Bank Account Number *"}
+                        </label>
+                        <input
+                          type="password"
+                          value={sellerPaymentDetails.accountNumber}
+                          onChange={(e) =>
+                            setSellerPaymentDetails((p: any) => ({
+                              ...p,
+                              accountNumber: e.target.value,
+                            }))
+                          }
+                          placeholder="Enter account number"
+                          className={`${inp} font-mono`}
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label className="text-xs font-bold text-gray-300 font-sans mb-1 block">
+                          {isHindi ? "खाता संख्या दोबारा दर्ज करें *" : "Confirm Account Number *"}
+                        </label>
+                        <input
+                          type="text"
+                          value={sellerPaymentDetails.confirmAccountNumber}
+                          onChange={(e) =>
+                            setSellerPaymentDetails((p: any) => ({
+                              ...p,
+                              confirmAccountNumber: e.target.value,
+                            }))
+                          }
+                          placeholder="Re-enter account number"
+                          className={`${inp} font-mono`}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-bold text-gray-300 font-sans mb-1 block">
+                        {isHindi ? "IFSC कोड *" : "IFSC Code *"}
+                      </label>
+                      <input
+                        type="text"
+                        maxLength={11}
+                        value={sellerPaymentDetails.ifscCode}
+                        onChange={(e) =>
+                          setSellerPaymentDetails((p: any) => ({
+                            ...p,
+                            ifscCode: e.target.value.toUpperCase(),
+                          }))
+                        }
+                        placeholder="e.g. SBIN0001234"
+                        className={`${inp} font-mono uppercase`}
+                        required
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Optional Note */}
+                <div>
+                  <label className="text-xs font-bold text-gray-300 font-sans mb-1 block">
+                    {isHindi ? "अतिरिक्त टिप्पणी (वैकल्पिक)" : "Payment Note (Optional)"}
+                  </label>
+                  <input
+                    type="text"
+                    value={sellerPaymentDetails.paymentNote}
+                    onChange={(e) =>
+                      setSellerPaymentDetails((p: any) => ({ ...p, paymentNote: e.target.value }))
+                    }
+                    placeholder={
+                      isHindi
+                        ? "उदा. फार्म का मुख्य बचत खाता"
+                        : "e.g. Primary farming current / savings account"
+                    }
+                    className={inp}
+                  />
+                </div>
+
+                {/* Submit button */}
+                <button
+                  type="submit"
+                  disabled={paymentDetailsSaving}
+                  className="w-full py-3.5 rounded-full bg-gradient-to-r from-[#c8a96e] to-[#8b5e2a] text-zinc-950 font-bold font-sans text-sm hover:opacity-90 transition-opacity flex items-center justify-center gap-2 shadow-lg"
+                >
+                  {paymentDetailsSaving ? (
+                    <span className="w-4 h-4 border-2 border-zinc-950 border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <Save size={16} />
+                      {isHindi ? "सहेजें और सत्यापन हेतु भेजें" : "Save & Submit for Verification"}
+                    </>
+                  )}
+                </button>
+              </form>
             </div>
           )}
 
@@ -3874,8 +4493,8 @@ export default function SellerDashboard() {
                 <div>
                   <label className="text-xs font-bold text-gray-300 font-sans mb-1 block">
                     {isHindi
-                      ? "कीमत (₹) *"
-                      : "Price (₹) *"}
+                      ? "बकरे की कीमत (₹) *"
+                      : "Goat Price (₹) *"}
                   </label>
 
                   <input
@@ -3893,11 +4512,33 @@ export default function SellerDashboard() {
                 </div>
               </div>
 
-              {/* Informational 2% Platform Commission Breakdown */}
-              <div className="rounded-2xl border border-zinc-800 bg-[#141414] p-3.5 sm:p-4 space-y-2.5 text-xs font-sans">
+              <div>
+                <label className="text-xs font-bold text-gray-300 font-sans mb-1 block">
+                  {isHindi
+                    ? "डिलीवरी शुल्क (₹) [0 = मुफ़्त डिलीवरी]"
+                    : "Delivery Fee (₹) [0 = Free Delivery]"}
+                </label>
+
+                <input
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  value={formData.deliveryCharge}
+                  onChange={(e) =>
+                    setFormData((p) => ({
+                      ...p,
+                      deliveryCharge: e.target.value,
+                    }))
+                  }
+                  className={inp}
+                />
+              </div>
+
+              {/* Informational Platform Commission & Earnings Breakdown */}
+              <div className="rounded-2xl border border-zinc-800 bg-[#141414] p-3.5 sm:p-4 space-y-2 text-xs font-sans">
                 <div className="flex items-center justify-between text-gray-400">
                   <span className="font-medium">
-                    {isHindi ? "विक्रेता मूल कीमत (Base Price)" : "Seller Base Price"}
+                    {isHindi ? "बकरे का मूल मूल्य (Goat Price)" : "Goat Base Price"}
                   </span>
                   <span className="font-bold text-white font-mono text-sm">
                     {formatCurrencyINR(listingEstimate.sellerBasePrice)}
@@ -3907,19 +4548,39 @@ export default function SellerDashboard() {
                 <div className="flex items-center justify-between text-amber-400/90">
                   <span>
                     {isHindi
-                      ? `GoatMart प्लेटफॉर्म कमीशन (${listingEstimate.commissionRate}%)`
-                      : `GoatMart Platform Commission (${listingEstimate.commissionRate}%)`}
+                      ? `GoatMart प्लेटफॉर्म कमीशन (${listingEstimate.commissionRate}% - केवल बकरे पर)`
+                      : `GoatMart Platform Commission (${listingEstimate.commissionRate}% - Goat Only)`}
                   </span>
                   <span className="font-semibold font-mono text-xs">
                     {listingEstimate.isValidPrice ? `- ${formatCurrencyINR(listingEstimate.estimatedCommission)}` : "₹0"}
                   </span>
                 </div>
 
+                <div className="flex items-center justify-between text-gray-300">
+                  <span>
+                    {isHindi ? "बकरे की शुद्ध कमाई (Goat Net)" : "Seller Goat Net"}
+                  </span>
+                  <span className="font-semibold font-mono text-xs">
+                    {formatCurrencyINR(listingEstimate.estimatedSellerGoatNet)}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between text-emerald-400">
+                  <span>
+                    {isHindi
+                      ? "डिलीवरी राजस्व (100% विक्रेता को, 0% कमीशन)"
+                      : "Delivery Revenue (100% to Seller, 0% fee)"}
+                  </span>
+                  <span className="font-semibold font-mono text-xs">
+                    +{formatCurrencyINR(listingEstimate.deliveryCharge)}
+                  </span>
+                </div>
+
                 <div className="flex items-center justify-between border-t border-zinc-800/80 pt-2 text-xs sm:text-sm">
                   <span className="font-bold text-emerald-400">
                     {isHindi
-                      ? "अनुमानित शुद्ध विक्रेता आय (Estimated Net)"
-                      : "Estimated Seller Net Amount"}
+                      ? "कुल अनुमानित विक्रेता शुद्ध आय (Total Net Payable)"
+                      : "Total Estimated Seller Net Amount"}
                   </span>
                   <span className="font-bold text-emerald-400 font-mono text-sm sm:text-base">
                     {formatCurrencyINR(listingEstimate.estimatedSellerNet)}
@@ -3928,8 +4589,8 @@ export default function SellerDashboard() {
 
                 <p className="text-[11px] text-gray-500 pt-0.5 leading-relaxed">
                   {isHindi
-                    ? "ℹ️ सूचना: 2% प्लेटफॉर्म कमीशन केवल बकरी की सफल बिक्री पर लागू होता है। लिस्टिंग के लिए कोई अग्रिम शुल्क नहीं है।"
-                    : "ℹ️ Note: 2% platform commission applies only when your goat is sold. No upfront listing fee is charged."}
+                    ? "ℹ️ सूचना: 2% प्लेटफॉर्म कमीशन केवल बकरे की मूल कीमत पर लागू होता है। डिलीवरी शुल्क से कोई कमीशन नहीं काटा जाता।"
+                    : "ℹ️ Note: 2% platform commission applies only to the goat price. 0% commission is charged on delivery."}
                 </p>
               </div>
 

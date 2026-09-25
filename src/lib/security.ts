@@ -79,8 +79,9 @@ export function checkRateLimit(key: string, limit = 10, windowMs = 60000): { all
  */
 export async function getAuthUser(): Promise<AuthenticatedUser | null> {
   const session = await getSession();
-  if (!session?.user?.id) return null;
-  return session.user as AuthenticatedUser;
+  const user = session?.user as AuthenticatedUser | undefined;
+  if (!user?.id) return null;
+  return user;
 }
 
 /**

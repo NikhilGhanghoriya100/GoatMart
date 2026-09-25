@@ -39,6 +39,10 @@ export interface IOrder extends Document {
 
   // Phase 2: Permanent Financial Snapshot
   sellerBasePrice?: number;
+  deliveryCharge?: number;
+  buyerPlatformFee?: number;
+  sellerDeliveryAmount?: number;
+  sellerGoatNet?: number;
   commissionRate?: number;
   commissionAmount?: number;
   sellerNetPayable?: number;
@@ -46,12 +50,28 @@ export interface IOrder extends Document {
   financialCalculationVersion?: string;
   financialCalculatedAt?: Date;
 
+  // Expenses Breakdown (Admin Controlled)
+  expenses?: {
+    type: "platform" | "seller";
+    amount: number;
+    reason: string;
+    recordedBy?: mongoose.Types.ObjectId;
+    recordedByRole?: string;
+    recordedAt?: Date;
+  }[];
+
   // Step 8: Cancellation & Refund Tracking
   cancellation?: {
     cancelledAt?: Date;
     cancelledBy?: mongoose.Types.ObjectId;
     cancelledByRole?: "customer" | "seller" | "admin" | "system";
     reason?: string;
+    refundCommissionRate?: number;
+    refundCommissionAmount?: number;
+    platformExpense?: number;
+    sellerExpense?: number;
+    totalDeductions?: number;
+    finalRefundAmount?: number;
   };
   refund?: {
     status: "none" | "pending" | "processing" | "processed" | "failed";
@@ -63,6 +83,15 @@ export interface IOrder extends Document {
     failedAt?: Date;
     failureReason?: string;
     reason?: string;
+    breakdown?: {
+      totalCustomerPaid: number;
+      refundCommissionRate: number;
+      refundCommissionAmount: number;
+      platformExpense: number;
+      sellerExpense: number;
+      totalDeductions: number;
+      finalRefundAmount: number;
+    };
   };
 
   // Step 9: Seller Payout Tracking
@@ -80,6 +109,16 @@ export interface IOrder extends Document {
     failureReason?: string;
     reversalReason?: string;
     retryCount?: number;
+
+    // Manual Payout fields
+    isManual?: boolean;
+    payoutMethod?: "UPI" | "BANK";
+    referenceId?: string;
+    utrNumber?: string;
+    paidAt?: Date;
+    paidBy?: mongoose.Types.ObjectId;
+    paidByName?: string;
+    adminNote?: string;
   };
 }
 const OrderSchema = new Schema<IOrder>(
@@ -142,12 +181,28 @@ const OrderSchema = new Schema<IOrder>(
 
     // Phase 2: Immutable Financial Snapshot
     sellerBasePrice: { type: Number },
+    deliveryCharge: { type: Number, default: 0 },
+    buyerPlatformFee: { type: Number, default: 0 },
+    sellerDeliveryAmount: { type: Number, default: 0 },
+    sellerGoatNet: { type: Number },
     commissionRate: { type: Number },
     commissionAmount: { type: Number },
     sellerNetPayable: { type: Number },
     currency: { type: String, default: "INR" },
     financialCalculationVersion: { type: String, default: "1.0" },
     financialCalculatedAt: { type: Date, default: Date.now },
+
+    // Admin-controlled order expenses
+    expenses: [
+      {
+        type: { type: String, enum: ["platform", "seller"], required: true },
+        amount: { type: Number, required: true },
+        reason: { type: String, required: true },
+        recordedBy: { type: Schema.Types.ObjectId, ref: "User" },
+        recordedByRole: { type: String, default: "admin" },
+        recordedAt: { type: Date, default: Date.now },
+      },
+    ],
 
     // Step 8: Cancellation & Refund Tracking
     cancellation: {
@@ -158,6 +213,12 @@ const OrderSchema = new Schema<IOrder>(
         enum: ["customer", "seller", "admin", "system"],
       },
       reason: String,
+      refundCommissionRate: Number,
+      refundCommissionAmount: Number,
+      platformExpense: Number,
+      sellerExpense: Number,
+      totalDeductions: Number,
+      finalRefundAmount: Number,
     },
     refund: {
       status: {
@@ -173,6 +234,15 @@ const OrderSchema = new Schema<IOrder>(
       failedAt: Date,
       failureReason: String,
       reason: String,
+      breakdown: {
+        totalCustomerPaid: Number,
+        refundCommissionRate: Number,
+        refundCommissionAmount: Number,
+        platformExpense: Number,
+        sellerExpense: Number,
+        totalDeductions: Number,
+        finalRefundAmount: Number,
+      },
     },
 
     // Step 9: Seller Payout Tracking
@@ -194,6 +264,14 @@ const OrderSchema = new Schema<IOrder>(
       failureReason: String,
       reversalReason: String,
       retryCount: { type: Number, default: 0 },
+      isManual: { type: Boolean, default: false },
+      payoutMethod: { type: String, enum: ["UPI", "BANK"] },
+      referenceId: String,
+      utrNumber: String,
+      paidAt: Date,
+      paidBy: { type: Schema.Types.ObjectId, ref: "User" },
+      paidByName: String,
+      adminNote: String,
     },
   },
   { timestamps: true }

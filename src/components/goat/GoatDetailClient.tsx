@@ -1078,6 +1078,16 @@ export default function GoatDetailClient({ goat }: { goat: Goat }) {
                   : "(Inclusive of Direct Buyer Protection & Health Cert)"}
               </span>
             </div>
+
+            <div className="flex items-center gap-2 pt-1 text-xs font-sans">
+              <span className="font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5">
+                🚚 {goat.deliveryCharge && goat.deliveryCharge > 0
+                  ? `+ ${fmt(goat.deliveryCharge)} ${isHindi ? "डिलीवरी शुल्क" : "Delivery Fee"}`
+                  : isHindi
+                  ? "मुफ़्त डिलीवरी (Free Delivery)"
+                  : "Free Delivery"}
+              </span>
+            </div>
           </div>
 
           {/* Specifications */}

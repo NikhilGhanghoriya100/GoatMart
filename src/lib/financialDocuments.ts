@@ -1,6 +1,7 @@
 /**
  * GoatMart Financial Documents Engine
- * Step 10: Bilingual Customer Invoice, Seller Settlement Statement & Payout Receipt
+ * Step 10 & Business Rules v2:
+ * Bilingual Customer Invoice, Seller Settlement Statement, Payout Receipt & Refund Statement
  * 
  * Strict invariants:
  * - Read-only with respect to financial values.
@@ -71,6 +72,7 @@ export interface InvoiceDocumentData {
     amount?: number;
     processedAt?: string;
   };
+  customerTotalPaid?: number;
 }
 
 export interface SellerStatementData {
@@ -102,8 +104,11 @@ export interface SellerStatementData {
   };
   financials: {
     sellerBasePrice: number;
+    deliveryCharge: number;
     commissionRate: number;
     commissionAmount: number;
+    sellerGoatNet: number;
+    sellerDeliveryAmount: number;
     sellerNetPayable: number;
     currency: string;
     calculationVersion: string;
@@ -150,25 +155,91 @@ export interface PayoutReceiptData {
     initiatedAt: string | null;
     processedAt: string | null;
     failureReason?: string | null;
+    goatNet?: number;
+    deliveryAmount?: number;
+    isManual?: boolean;
+    payoutMethod?: string;
+    referenceId?: string | null;
+    paidByName?: string | null;
+    adminNote?: string | null;
+  };
+}
+
+export interface RefundStatementData {
+  documentType: "refund_statement";
+  statementNumber: string;
+  orderId: string;
+  statementDate: string;
+  orderDate: string;
+  refundDate: string;
+  marketplace: {
+    nameEn: string;
+    nameHi: string;
+  };
+  buyer: {
+    name: string;
+    phone: string;
+    address: string;
+    city: string;
+    state: string;
+    pin: string;
+  };
+  seller: {
+    name: string;
+    farmName: string;
+    location: string;
+  };
+  item: {
+    name: string;
+    breedEn: string;
+    breedHi: string;
+  };
+  breakdown: {
+    originalGoatPrice: number;
+    deliveryCharge: number;
+    buyerPlatformFee: number;
+    totalCustomerPaid: number;
+    refundCommissionRate: number;
+    refundCommissionAmount: number;
+    platformExpense: number;
+    platformExpenseReason?: string;
+    sellerExpense: number;
+    sellerExpenseReason?: string;
+    totalDeductions: number;
+    finalRefundAmount: number;
+    currency: string;
+  };
+  refund: {
+    status: string;
+    statusLabelEn: string;
+    statusLabelHi: string;
+    refundId: string | null;
+    paymentId: string | null;
+    reason: string;
   };
 }
 
 /**
  * Deterministic document numbering helpers
  */
-export function generateInvoiceNumber(orderId: string): string {
-  const cleanId = orderId.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+export function generateInvoiceNumber(orderId?: string): string {
+  const cleanId = String(orderId || "ORD").replace(/[^a-zA-Z0-9]/g, "").toUpperCase() || "ORD";
   return `INV-${cleanId}`;
 }
 
-export function generateStatementNumber(orderId: string): string {
-  const cleanId = orderId.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+export function generateStatementNumber(orderId?: string): string {
+  const cleanId = String(orderId || "ORD").replace(/[^a-zA-Z0-9]/g, "").toUpperCase() || "ORD";
   return `STMT-${cleanId}`;
 }
 
-export function generatePayoutReceiptNumber(orderId: string): string {
-  const cleanId = orderId.replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
+export function generatePayoutReceiptNumber(orderId?: string): string {
+  const cleanId = String(orderId || "ORD").replace(/[^a-zA-Z0-9]/g, "").toUpperCase() || "ORD";
   return `PAYOUT-${cleanId}`;
+}
+
+export function generateRefundNumber(orderId?: string): string {
+  const cleanId = String(orderId || "ORD").replace(/[^a-zA-Z0-9]/g, "").toUpperCase() || "ORD";
+  return `RFND-${cleanId}`;
 }
 
 /**
@@ -193,6 +264,7 @@ export function getBilingualStatus(status: string) {
     case "cancelled":
       return { en: "CANCELLED", hi: "रद्द" };
     case "refunded":
+    case "processed":
       return { en: "REFUNDED", hi: "रिफंड संपन्न" };
     case "unpaid":
       return { en: "UNPAID", hi: "अदत्त (लंबित)" };
@@ -233,24 +305,37 @@ export function generateOrderInvoiceData(
   customer?: any,
   seller?: any
 ): InvoiceDocumentData {
-  const statusInfo = getBilingualStatus(order.payment?.status || order.status);
-  const breedEn = order.goatBreed || "Standard Breed";
+  let actualOrder = order;
+  let actualCustomer = customer;
+  let actualSeller = seller;
+  if (order && order.order && !order.orderId && !order._id) {
+    actualCustomer = order.customer || customer;
+    actualSeller = order.seller || seller;
+    actualOrder = order.order;
+  }
+
+  const statusInfo = getBilingualStatus(actualOrder.payment?.status || actualOrder.status);
+  const breedEn = actualOrder.goatBreed || "Standard Breed";
   const breedHi = getBreedHindi(breedEn);
 
   // Authoritative financial fields from immutable snapshot
   const basePrice =
-    typeof order.sellerBasePrice === "number" ? order.sellerBasePrice : Number(order.amount) || 0;
-  const totalPaid = typeof order.amount === "number" ? order.amount : basePrice;
+    typeof actualOrder.sellerBasePrice === "number" ? actualOrder.sellerBasePrice : Number(actualOrder.amount) || 0;
+  const deliveryFee =
+    typeof actualOrder.deliveryCharge === "number" ? actualOrder.deliveryCharge : 0;
+  const totalPaid =
+    typeof actualOrder.amount === "number" ? actualOrder.amount : basePrice + deliveryFee;
 
-  const invoiceDate = formatDate(order.payment?.paidAt || order.createdAt);
-  const orderDate = formatDate(order.createdAt);
+  const invoiceDate = formatDate(actualOrder.payment?.paidAt || actualOrder.createdAt);
+  const orderDate = formatDate(actualOrder.createdAt);
 
   return {
     documentType: "invoice",
-    invoiceNumber: generateInvoiceNumber(order.orderId),
-    orderId: order.orderId,
+    invoiceNumber: generateInvoiceNumber(actualOrder.orderId),
+    orderId: actualOrder.orderId,
     invoiceDate,
     orderDate,
+    customerTotalPaid: totalPaid,
     marketplace: {
       nameEn: "GoatMart Marketplace",
       nameHi: "बकरावाले - GoatMart बाज़ार",
@@ -280,10 +365,10 @@ export function generateOrderInvoiceData(
     financials: {
       basePrice,
       platformFeeIncluded: true,
-      deliveryFee: 0,
+      deliveryFee,
       totalAmountPaid: totalPaid,
       currency: order.currency || "INR",
-      calculationVersion: order.financialCalculationVersion || "1.0",
+      calculationVersion: order.financialCalculationVersion || "2.0",
     },
     payment: {
       status: order.payment?.status || "pending",
@@ -318,16 +403,26 @@ export function generateSellerStatementData(
   // STRICT RULE: Use stored immutable snapshot fields directly
   const sellerBasePrice =
     typeof order.sellerBasePrice === "number" ? order.sellerBasePrice : Number(order.amount) || 0;
+  const deliveryCharge =
+    typeof order.deliveryCharge === "number" ? order.deliveryCharge : 0;
   const commissionRate =
     typeof order.commissionRate === "number" ? order.commissionRate : 2.0;
   const commissionAmount =
     typeof order.commissionAmount === "number"
       ? order.commissionAmount
       : Math.round((sellerBasePrice * commissionRate) / 100);
+  const sellerGoatNet =
+    typeof order.sellerGoatNet === "number"
+      ? order.sellerGoatNet
+      : sellerBasePrice - commissionAmount;
+  const sellerDeliveryAmount =
+    typeof order.sellerDeliveryAmount === "number"
+      ? order.sellerDeliveryAmount
+      : deliveryCharge;
   const sellerNetPayable =
     typeof order.sellerNetPayable === "number"
       ? order.sellerNetPayable
-      : sellerBasePrice - commissionAmount;
+      : sellerGoatNet + sellerDeliveryAmount;
 
   return {
     documentType: "seller_statement",
@@ -358,11 +453,14 @@ export function generateSellerStatementData(
     },
     financials: {
       sellerBasePrice,
+      deliveryCharge,
       commissionRate,
       commissionAmount,
+      sellerGoatNet,
+      sellerDeliveryAmount,
       sellerNetPayable,
       currency: order.currency || "INR",
-      calculationVersion: order.financialCalculationVersion || "1.0",
+      calculationVersion: order.financialCalculationVersion || "2.0",
     },
     orderStatus: order.status,
     orderStatusLabelEn: orderStatusInfo.en,
@@ -383,42 +481,158 @@ export function generatePayoutReceiptData(
   order: any,
   seller?: any
 ): PayoutReceiptData {
-  const payoutStatusInfo = getBilingualStatus(order.payout?.status || "unpaid");
+  let actualOrder = order;
+  let actualSeller = seller;
+  if (order && order.order && !order.orderId && !order._id) {
+    actualSeller = order.seller || seller;
+    actualOrder = order.order;
+  }
+
+  const payoutStatusInfo = getBilingualStatus(actualOrder.payout?.status || "unpaid");
   const sellerNetPayable =
-    typeof order.sellerNetPayable === "number"
-      ? order.sellerNetPayable
-      : typeof order.payout?.amount === "number"
-      ? order.payout.amount
+    typeof actualOrder.sellerNetPayable === "number"
+      ? actualOrder.sellerNetPayable
+      : typeof actualOrder.payout?.amount === "number"
+      ? actualOrder.payout.amount
       : 0;
 
   return {
     documentType: "payout_receipt",
-    receiptNumber: generatePayoutReceiptNumber(order.orderId),
-    orderId: order.orderId,
+    receiptNumber: generatePayoutReceiptNumber(actualOrder.orderId),
+    orderId: actualOrder.orderId,
     receiptDate: formatDate(new Date()),
-    payoutDate: formatDate(order.payout?.processedAt || order.payout?.initiatedAt || new Date()),
+    payoutDate: formatDate(actualOrder.payout?.processedAt || actualOrder.payout?.initiatedAt || new Date()),
     marketplace: {
       nameEn: "GoatMart Seller Payout Disbursements",
       nameHi: "बकरावाले - GoatMart पेआउट प्रेषण",
     },
     seller: {
-      id: seller?._id?.toString() || order.seller?.toString() || "",
-      name: seller?.name || order.sellerName || "Seller",
-      farmName: seller?.sellerProfile?.farmName || "Farm",
-      email: seller?.email || "",
+      id: actualSeller?._id?.toString() || actualOrder.seller?.toString() || "",
+      name: actualSeller?.name || actualOrder.sellerName || "Seller",
+      farmName: actualSeller?.sellerProfile?.farmName || "Farm",
+      email: actualSeller?.email || "",
     },
     payout: {
-      status: order.payout?.status || "none",
+      status: actualOrder.payout?.status || "none",
       statusLabelEn: payoutStatusInfo.en,
       statusLabelHi: payoutStatusInfo.hi,
       amount: sellerNetPayable,
+      currency: actualOrder.currency || "INR",
+      transferId: actualOrder.payout?.transferId || null,
+      recipientAccountId: actualOrder.payout?.recipientAccountId || null,
+      idempotencyKey: actualOrder.payout?.idempotencyKey || null,
+      initiatedAt: actualOrder.payout?.initiatedAt ? formatDate(actualOrder.payout.initiatedAt) : null,
+      processedAt: actualOrder.payout?.processedAt ? formatDate(actualOrder.payout.processedAt) : null,
+      failureReason: actualOrder.payout?.failureReason || null,
+      goatNet: typeof actualOrder.sellerGoatNet === "number" ? actualOrder.sellerGoatNet : undefined,
+      deliveryAmount: typeof actualOrder.sellerDeliveryAmount === "number" ? actualOrder.sellerDeliveryAmount : undefined,
+      isManual: actualOrder.payout?.isManual ?? false,
+      payoutMethod: actualOrder.payout?.payoutMethod || undefined,
+      referenceId: actualOrder.payout?.referenceId || actualOrder.payout?.utrNumber || actualOrder.payout?.transferId || null,
+      paidByName: actualOrder.payout?.paidByName || null,
+      adminNote: actualOrder.payout?.adminNote || null,
+    },
+  };
+}
+
+export function generateRefundStatementData(
+  order: any,
+  customer?: any,
+  seller?: any
+): RefundStatementData {
+  const statusInfo = getBilingualStatus(order.refund?.status || "processed");
+  const breedEn = order.goatBreed || "Standard Breed";
+  const breedHi = getBreedHindi(breedEn);
+
+  const totalPaid = typeof order.amount === "number" ? order.amount : (order.sellerBasePrice || 0);
+
+  const storedBreakdown = order.refund?.breakdown || {};
+  const refundCommissionRate = typeof storedBreakdown.refundCommissionRate === "number"
+    ? storedBreakdown.refundCommissionRate
+    : (order.cancellation?.refundCommissionRate ?? 3.5);
+
+  const refundCommissionAmount = typeof storedBreakdown.refundCommissionAmount === "number"
+    ? storedBreakdown.refundCommissionAmount
+    : (order.cancellation?.refundCommissionAmount ?? Number(((totalPaid * 350) / 10000).toFixed(2)));
+
+  const platformExpense = typeof storedBreakdown.platformExpense === "number"
+    ? storedBreakdown.platformExpense
+    : (order.cancellation?.platformExpense ?? 0);
+
+  const sellerExpense = typeof storedBreakdown.sellerExpense === "number"
+    ? storedBreakdown.sellerExpense
+    : (order.cancellation?.sellerExpense ?? 0);
+
+  const totalDeductions = typeof storedBreakdown.totalDeductions === "number"
+    ? storedBreakdown.totalDeductions
+    : (order.cancellation?.totalDeductions ?? Number((refundCommissionAmount + platformExpense + sellerExpense).toFixed(2)));
+
+  const finalRefundAmount = typeof storedBreakdown.finalRefundAmount === "number"
+    ? storedBreakdown.finalRefundAmount
+    : (order.refund?.amount ?? Math.max(0, Number((totalPaid - totalDeductions).toFixed(2))));
+
+  const originalGoatPrice = typeof order.sellerBasePrice === "number" ? order.sellerBasePrice : (order.amount || 0);
+  const deliveryCharge = typeof order.deliveryCharge === "number" ? order.deliveryCharge : 0;
+  const buyerPlatformFee = typeof order.buyerPlatformFee === "number" ? order.buyerPlatformFee : 0;
+
+  const platformExpenseObj = Array.isArray(order.expenses)
+    ? order.expenses.find((e: any) => e.type === "platform")
+    : null;
+  const sellerExpenseObj = Array.isArray(order.expenses)
+    ? order.expenses.find((e: any) => e.type === "seller")
+    : null;
+
+  return {
+    documentType: "refund_statement",
+    statementNumber: generateRefundNumber(order.orderId),
+    orderId: order.orderId,
+    statementDate: formatDate(new Date()),
+    orderDate: formatDate(order.createdAt),
+    refundDate: formatDate(order.refund?.processedAt || order.cancellation?.cancelledAt || new Date()),
+    marketplace: {
+      nameEn: "GoatMart Marketplace",
+      nameHi: "बकरावाले - GoatMart बाज़ार",
+    },
+    buyer: {
+      name: order.delivery?.name || customer?.name || order.customerName || "Valued Buyer",
+      phone: order.delivery?.phone || customer?.phone || "N/A",
+      address: order.delivery?.address || "Registered Address",
+      city: order.delivery?.city || "N/A",
+      state: order.delivery?.state || "N/A",
+      pin: order.delivery?.pin || "",
+    },
+    seller: {
+      name: seller?.name || order.sellerName || "Verified Farm Seller",
+      farmName: seller?.sellerProfile?.farmName || "GoatMart Registered Breeder",
+      location: seller?.sellerProfile?.location || "India",
+    },
+    item: {
+      name: order.goatName || "Live Goat / बकरा",
+      breedEn,
+      breedHi,
+    },
+    breakdown: {
+      originalGoatPrice,
+      deliveryCharge,
+      buyerPlatformFee,
+      totalCustomerPaid: totalPaid,
+      refundCommissionRate,
+      refundCommissionAmount,
+      platformExpense,
+      platformExpenseReason: platformExpense > 0 ? (platformExpenseObj?.reason || "Admin verified platform expense") : undefined,
+      sellerExpense,
+      sellerExpenseReason: sellerExpense > 0 ? (sellerExpenseObj?.reason || "Admin verified seller expense") : undefined,
+      totalDeductions,
+      finalRefundAmount,
       currency: order.currency || "INR",
-      transferId: order.payout?.transferId || null,
-      recipientAccountId: order.payout?.recipientAccountId || null,
-      idempotencyKey: order.payout?.idempotencyKey || null,
-      initiatedAt: order.payout?.initiatedAt ? formatDate(order.payout.initiatedAt) : null,
-      processedAt: order.payout?.processedAt ? formatDate(order.payout.processedAt) : null,
-      failureReason: order.payout?.failureReason || null,
+    },
+    refund: {
+      status: order.refund?.status || "processed",
+      statusLabelEn: statusInfo.en,
+      statusLabelHi: statusInfo.hi,
+      refundId: order.refund?.refundId || null,
+      paymentId: order.payment?.razorpayPaymentId || null,
+      reason: order.cancellation?.reason || order.refund?.reason || "Customer requested cancellation",
     },
   };
 }
@@ -587,7 +801,7 @@ const COMMON_CSS = `
     margin-top: 16px;
   }
   .summary-card {
-    width: 320px;
+    width: 340px;
     background: #fcfcfd;
     border: 1px solid #e4e4e7;
     border-radius: 8px;
@@ -785,7 +999,7 @@ export function renderInvoiceHtml(data: InvoiceDocumentData): string {
       <div class="financial-summary">
         <div class="summary-card">
           <div class="summary-row">
-            <span>Item Price / बकरी की कीमत:</span>
+            <span>Item Price / बकरे की कीमत:</span>
             <span>${formatCurrencyINR(data.financials.basePrice)}</span>
           </div>
           <div class="summary-row">
@@ -794,7 +1008,7 @@ export function renderInvoiceHtml(data: InvoiceDocumentData): string {
           </div>
           <div class="summary-row">
             <span>Delivery & Transit / डिलीवरी शुल्क:</span>
-            <span>₹0 (Included)</span>
+            <span>${data.financials.deliveryFee > 0 ? formatCurrencyINR(data.financials.deliveryFee) : "₹0 (Free Delivery / मुफ़्त)"}</span>
           </div>
           <div class="summary-row summary-total">
             <span>Total Paid / कुल भुगतान राशि:</span>
@@ -943,19 +1157,37 @@ export function renderSellerStatementHtml(data: SellerStatementData): string {
             <tr>
               <td style="color: #b91c1c;">
                 <strong>Platform Fee / प्लेटफ़ॉर्म कमीशन</strong>
-                <div style="font-size: 11px; color: #71717a;">GoatMart marketplace commission</div>
+                <div style="font-size: 11px; color: #71717a;">GoatMart commission (2% only on goat price)</div>
               </td>
-              <td>Base Price × Stored Commission Rate</td>
+              <td>Base Price × 2.0%</td>
               <td class="text-right font-mono" style="color: #b91c1c;">${data.financials.commissionRate}%</td>
               <td class="text-right font-mono font-bold" style="color: #b91c1c;">-${formatCurrencyINR(data.financials.commissionAmount)}</td>
             </tr>
-            <tr style="background: #fdfaf6;">
-              <td style="color: #8b5e2a;">
-                <strong>Seller Net Payable / विक्रेता को शुद्ध देय राशि</strong>
-                <div style="font-size: 11px; color: #71717a;">Net payout amount due to seller</div>
+            <tr>
+              <td>
+                <strong>Seller Goat Net / बकरे की शुद्ध कमाई</strong>
+                <div style="font-size: 11px; color: #71717a;">Goat price minus platform commission</div>
               </td>
               <td>Base Price - Commission Amount</td>
               <td class="text-right font-mono">${(100 - data.financials.commissionRate).toFixed(1)}%</td>
+              <td class="text-right font-mono font-bold">${formatCurrencyINR(data.financials.sellerGoatNet)}</td>
+            </tr>
+            <tr>
+              <td style="color: #166534;">
+                <strong>Delivery Revenue / डिलीवरी राजस्व</strong>
+                <div style="font-size: 11px; color: #71717a;">100% delivery fee to seller (0% platform commission)</div>
+              </td>
+              <td>Delivery Charge</td>
+              <td class="text-right font-mono" style="color: #166534;">0% fee</td>
+              <td class="text-right font-mono font-bold" style="color: #166534;">+${formatCurrencyINR(data.financials.sellerDeliveryAmount)}</td>
+            </tr>
+            <tr style="background: #fdfaf6;">
+              <td style="color: #8b5e2a;">
+                <strong>Seller Net Payable / विक्रेता को कुल शुद्ध देय राशि</strong>
+                <div style="font-size: 11px; color: #71717a;">Goat Net + Delivery Revenue due to seller</div>
+              </td>
+              <td>Goat Net + Delivery Revenue</td>
+              <td class="text-right font-mono">Net Total</td>
               <td class="text-right font-mono font-bold" style="color: #8b5e2a; font-size: 15px;">
                 ${formatCurrencyINR(data.financials.sellerNetPayable)}
               </td>
@@ -1062,11 +1294,25 @@ export function renderPayoutReceiptHtml(data: PayoutReceiptData): string {
         </div>
 
         <div class="party-card">
-          <div class="party-title">💳 DESTINATION / गंतव्य बैंक खाता</div>
+          <div class="party-title">💳 DESTINATION / गंतव्य बैंक या UPI खाता</div>
           <div class="party-name font-mono text-emerald-700">
-            ${data.payout.recipientAccountId ? `Razorpay Account: ${data.payout.recipientAccountId}` : "Linked Seller Account"}
+            ${
+              data.payout.isManual
+                ? data.payout.payoutMethod === "UPI"
+                  ? `UPI Transfer (${data.payout.referenceId || "Direct"})`
+                  : `Bank Transfer (${data.payout.payoutMethod || "NEFT/IMPS"})`
+                : data.payout.recipientAccountId
+                ? `Razorpay Account: ${data.payout.recipientAccountId}`
+                : "Verified Seller Account"
+            }
           </div>
-          <div class="party-detail">🔒 KYC-Verified Razorpay Route Account</div>
+          <div class="party-detail">
+            ${
+              data.payout.isManual
+                ? "🔒 Manual External Transfer verified & authorized by GoatMart Finance Administration"
+                : "🔒 KYC-Verified Connected Account"
+            }
+          </div>
           <div class="party-detail">🛡️ Safe direct settlement via Reserve Bank of India framework</div>
         </div>
       </div>
@@ -1082,9 +1328,27 @@ export function renderPayoutReceiptHtml(data: PayoutReceiptData): string {
             </tr>
           </thead>
           <tbody>
+            ${
+              typeof data.payout.goatNet === "number"
+                ? `<tr>
+                    <td>Goat Net Revenue / बकरी बिक्री की शुद्ध राशि</td>
+                    <td>Goat Net</td>
+                    <td class="text-right font-mono">${formatCurrencyINR(data.payout.goatNet)}</td>
+                  </tr>`
+                : ""
+            }
+            ${
+              typeof data.payout.deliveryAmount === "number" && data.payout.deliveryAmount > 0
+                ? `<tr>
+                    <td>Delivery Revenue (100% to seller) / डिलीवरी शुल्क</td>
+                    <td>Delivery Charge</td>
+                    <td class="text-right font-mono">${formatCurrencyINR(data.payout.deliveryAmount)}</td>
+                  </tr>`
+                : ""
+            }
             <tr>
               <td>
-                <strong>Net Disbursed Funds / शुद्ध प्रेषित राशि</strong>
+                <strong>Net Disbursed Funds / कुल शुद्ध प्रेषित राशि</strong>
                 <div style="font-size: 11px; color: #71717a;">Derived strictly from immutable order sellerNetPayable</div>
               </td>
               <td>Order Net Payable</td>
@@ -1100,12 +1364,24 @@ export function renderPayoutReceiptHtml(data: PayoutReceiptData): string {
       <div class="payment-callout ${statusClass}">
         <div>
           <div style="font-size: 13px; font-weight: 700; text-transform: uppercase;">
+            ${data.payout.isManual ? "MANUAL EXTERNAL TRANSFER / मैन्युअल बाह्य बैंक/UPI ट्रांसफ़र • " : ""}
             Payout Status / स्थिति: ${data.payout.statusLabelEn} (${data.payout.statusLabelHi})
           </div>
           ${
-            data.payout.transferId
+            data.payout.referenceId
+              ? `<div style="font-size: 11px; font-family: monospace; margin-top: 3px;">
+                  Transaction Reference / UTR ID (लेनदेन संदर्भ): <strong>${data.payout.referenceId}</strong>
+                </div>`
+              : data.payout.transferId
               ? `<div style="font-size: 11px; font-family: monospace; margin-top: 3px;">
                   Provider Transfer ID / रेज़रपे ट्रांसफर आईडी: <strong>${data.payout.transferId}</strong>
+                </div>`
+              : ""
+          }
+          ${
+            data.payout.isManual && data.payout.payoutMethod
+              ? `<div style="font-size: 11px; margin-top: 2px; color: #52525b;">
+                  Payout Method / माध्यम: <strong>${data.payout.payoutMethod}</strong> ${data.payout.paidByName ? `• Disbursed By Admin: ${data.payout.paidByName}` : ""}
                 </div>`
               : ""
           }
@@ -1127,7 +1403,7 @@ export function renderPayoutReceiptHtml(data: PayoutReceiptData): string {
         ${
           data.payout.processedAt
             ? `<div style="font-size: 12px; text-align: right;">
-                Processed At / प्रेषण समय:<br><strong>${data.payout.processedAt}</strong>
+                Disbursed At / प्रेषण समय:<br><strong>${data.payout.processedAt}</strong>
               </div>`
             : ""
         }
@@ -1139,6 +1415,230 @@ export function renderPayoutReceiptHtml(data: PayoutReceiptData): string {
       <div>
         Official Disbursement Slip / अधिकृत प्रेषण रसीद • GoatMart Payouts Engine<br>
         All amounts reconciled from authoritative order snapshots.
+      </div>
+      <div style="text-align: right;">
+        www.bakrawale.com
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Renders Customer Order Cancellation & Refund Statement (Bilingual HTML)
+ */
+export function renderRefundStatementHtml(data: RefundStatementData): string {
+  return `<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GoatMart Refund Statement / रिफंड विवरण - ${data.statementNumber}</title>
+  <style>${COMMON_CSS}</style>
+</head>
+<body>
+  <div class="print-bar no-print">
+    <div style="font-size: 12px; color: #666;">
+      🇮🇳 <strong>Cancellation & Refund Statement / रद्दीकरण एवं रिफंड विवरण</strong> (Bilingual / द्विभाषी)
+    </div>
+    <button class="btn-print" onclick="window.print()">
+      🖨️ Print / Save PDF (प्रिंट / पीडीएफ सेव करें)
+    </button>
+  </div>
+
+  <div class="doc-container">
+    <!-- Header -->
+    <div class="doc-header">
+      <div class="brand-logo">
+        <span class="goat-icon">🔄</span>
+        <div>
+          <div class="brand-title">${data.marketplace.nameEn}</div>
+          <div class="brand-sub">${data.marketplace.nameHi}</div>
+        </div>
+      </div>
+      <div class="doc-meta">
+        <div class="doc-badge">REFUND STATEMENT / रिफंड विवरण</div>
+        <div class="doc-number">${data.statementNumber}</div>
+        <div class="doc-date">Statement Date / दिनांक: ${data.statementDate}</div>
+        <div class="doc-date">Order ID / ऑर्डर आईडी: <strong>${data.orderId}</strong></div>
+      </div>
+    </div>
+
+    <!-- Body -->
+    <div class="doc-body">
+      <!-- Parties -->
+      <div class="parties-grid">
+        <div class="party-card">
+          <div class="party-title">👤 CUSTOMER / ग्राहक विवरण</div>
+          <div class="party-name">${data.buyer.name}</div>
+          <div class="party-detail">📞 ${data.buyer.phone}</div>
+          <div class="party-detail">📍 ${data.buyer.address}</div>
+          <div class="party-detail">${data.buyer.city}, ${data.buyer.state} ${data.buyer.pin ? "- " + data.buyer.pin : ""}</div>
+        </div>
+
+        <div class="party-card">
+          <div class="party-title">🏪 SELLER / विक्रेता विवरण</div>
+          <div class="party-name">${data.seller.name}</div>
+          <div class="party-detail">🏡 Farm / फार्म: ${data.seller.farmName}</div>
+          <div class="party-detail">📍 Location / स्थान: ${data.seller.location}</div>
+          <div class="party-detail">📅 Original Order Date: ${data.orderDate}</div>
+        </div>
+      </div>
+
+      <!-- Item Info -->
+      <div style="background: #fdfaf6; border: 1px solid #fae8c8; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px; font-size: 13px;">
+        <strong>Cancelled Item / रद्द की गई वस्तु:</strong> ${data.item.name} (${data.item.breedEn} / ${data.item.breedHi})
+      </div>
+
+      <!-- Financial Breakdown Table -->
+      <div class="table-section">
+        <div style="font-size: 12px; font-weight: 700; color: #71717a; text-transform: uppercase; margin-bottom: 8px;">
+          AUTHORITATIVE REFUND BREAKDOWN / अधिकृत रिफंड गणना विवरण
+        </div>
+        <table class="doc-table">
+          <thead>
+            <tr>
+              <th>Component / घटक</th>
+              <th>Rule / नियम</th>
+              <th class="text-right">Deduction / कटौती</th>
+              <th class="text-right">Amount / राशि (${data.breakdown.currency})</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <strong>Original Goat Price / बकरे की मूल कीमत</strong>
+                <div style="font-size: 11px; color: #71717a;">Authoritative base goat listing price</div>
+              </td>
+              <td>Seller Price</td>
+              <td class="text-right">-</td>
+              <td class="text-right font-mono font-bold">${formatCurrencyINR(data.breakdown.originalGoatPrice)}</td>
+            </tr>
+            <tr>
+              <td>
+                <strong>Delivery Charge / डिलीवरी शुल्क</strong>
+                <div style="font-size: 11px; color: #71717a;">Livestock transit & delivery charge</div>
+              </td>
+              <td>Transport Fee</td>
+              <td class="text-right">-</td>
+              <td class="text-right font-mono font-bold">${formatCurrencyINR(data.breakdown.deliveryCharge)}</td>
+            </tr>
+            ${
+              data.breakdown.buyerPlatformFee > 0
+                ? `<tr>
+                    <td>
+                      <strong>Buyer Platform Fee / खरीदार प्लेटफ़ॉर्म शुल्क (2%)</strong>
+                      <div style="font-size: 11px; color: #71717a;">2% buyer platform facilitation fee on goat price</div>
+                    </td>
+                    <td>Platform Fee</td>
+                    <td class="text-right">-</td>
+                    <td class="text-right font-mono font-bold">${formatCurrencyINR(data.breakdown.buyerPlatformFee)}</td>
+                  </tr>`
+                : ""
+            }
+            <tr style="background: #fcfcfd; font-weight: 600;">
+              <td>
+                <strong>Original Total Customer Payment / कुल मूल भुगतान</strong>
+                <div style="font-size: 11px; color: #71717a;">Total payment collected at checkout (Goat + Delivery + Buyer Fee)</div>
+              </td>
+              <td>Total Paid</td>
+              <td class="text-right">-</td>
+              <td class="text-right font-mono font-bold">${formatCurrencyINR(data.breakdown.totalCustomerPaid)}</td>
+            </tr>
+            <tr>
+              <td style="color: #b91c1c;">
+                <strong>Refund Commission / रिफंड प्लेटफ़ॉर्म शुल्क</strong>
+                <div style="font-size: 11px; color: #71717a;">3.5% cancellation fee on total customer payment</div>
+              </td>
+              <td>Total Paid × 3.5%</td>
+              <td class="text-right font-mono" style="color: #b91c1c;">${data.breakdown.refundCommissionRate}%</td>
+              <td class="text-right font-mono font-bold" style="color: #b91c1c;">-${formatCurrencyINR(data.breakdown.refundCommissionAmount)}</td>
+            </tr>
+            ${
+              data.breakdown.platformExpense > 0
+                ? `<tr>
+                    <td style="color: #b91c1c;">
+                      <strong>Platform Incurred Expense / प्लेटफ़ॉर्म खर्च</strong>
+                      <div style="font-size: 11px; color: #71717a;">${data.breakdown.platformExpenseReason ? `Reason / कारण: ${data.breakdown.platformExpenseReason}` : "Actual logistics / admin expense incurred"}</div>
+                    </td>
+                    <td>Admin Verified</td>
+                    <td class="text-right font-mono" style="color: #b91c1c;">Actual</td>
+                    <td class="text-right font-mono font-bold" style="color: #b91c1c;">-${formatCurrencyINR(data.breakdown.platformExpense)}</td>
+                  </tr>`
+                : ""
+            }
+            ${
+              data.breakdown.sellerExpense > 0
+                ? `<tr>
+                    <td style="color: #b91c1c;">
+                      <strong>Seller Incurred Expense / विक्रेता खर्च</strong>
+                      <div style="font-size: 11px; color: #71717a;">${data.breakdown.sellerExpenseReason ? `Reason / कारण: ${data.breakdown.sellerExpenseReason}` : "Transit prep / handling expense incurred"}</div>
+                    </td>
+                    <td>Admin Verified</td>
+                    <td class="text-right font-mono" style="color: #b91c1c;">Actual</td>
+                    <td class="text-right font-mono font-bold" style="color: #b91c1c;">-${formatCurrencyINR(data.breakdown.sellerExpense)}</td>
+                  </tr>`
+                : ""
+            }
+            <tr>
+              <td style="color: #b91c1c; font-weight: 700;">
+                Total Deductions / कुल कटौतियां
+              </td>
+              <td>Commission + Verified Expenses</td>
+              <td class="text-right font-mono" style="color: #b91c1c;">Total</td>
+              <td class="text-right font-mono font-bold" style="color: #b91c1c;">-${formatCurrencyINR(data.breakdown.totalDeductions)}</td>
+            </tr>
+            <tr style="background: #f0fdf4;">
+              <td style="color: #166534;">
+                <strong>Final Net Refund / शुद्ध रिफंड राशि</strong>
+                <div style="font-size: 11px; color: #166534;">Amount disbursed back to original payment method</div>
+              </td>
+              <td>Total Paid - Total Deductions</td>
+              <td class="text-right font-mono" style="color: #166534;">Refund</td>
+              <td class="text-right font-mono font-bold" style="color: #166534; font-size: 16px;">
+                ${formatCurrencyINR(data.breakdown.finalRefundAmount)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Refund Reference Callout -->
+      <div class="payment-callout status-paid">
+        <div>
+          <div style="font-size: 13px; font-weight: 700; text-transform: uppercase;">
+            Refund Status / स्थिति: ${data.refund.statusLabelEn} (${data.refund.statusLabelHi})
+          </div>
+          ${
+            data.refund.refundId
+              ? `<div style="font-size: 11px; font-family: monospace; margin-top: 3px;">
+                  Razorpay Refund ID / रिफंड आईडी: <strong>${data.refund.refundId}</strong>
+                </div>`
+              : ""
+          }
+          ${
+            data.refund.paymentId
+              ? `<div style="font-size: 11px; font-family: monospace; margin-top: 2px;">
+                  Original Payment Reference: <strong>${data.refund.paymentId}</strong>
+                </div>`
+              : ""
+          }
+          <div style="font-size: 11px; color: #52525b; margin-top: 3px;">
+            Reason / कारण: ${data.refund.reason}
+          </div>
+        </div>
+        <div style="font-size: 12px; text-align: right;">
+          Refund Date / रिफंड दिनांक:<br><strong>${data.refundDate}</strong>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="doc-footer">
+      <div>
+        Official Computer Generated Refund Statement / अधिकृत रिफंड रसीद<br>
+        Processed via Razorpay Payment Gateway • GoatMart Platform
       </div>
       <div style="text-align: right;">
         www.bakrawale.com

@@ -97,9 +97,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const deliveryCharge =
+      typeof reservedGoat.deliveryCharge === "number" && reservedGoat.deliveryCharge >= 0
+        ? reservedGoat.deliveryCharge
+        : 0;
+
+    // Phase 2: Compute authoritative server-side financial snapshot
+    const financials = calculateOrderFinancials(reservedGoat.price, { deliveryCharge });
+
+    const totalOrderAmount = financials.totalAmount ?? (financials.sellerBasePrice + (financials.deliveryCharge ?? 0));
     let rzpOrder: any;
     try {
-      rzpOrder = await createRazorpayOrder(reservedGoat.price, `goat_${goatId}`);
+      rzpOrder = await createRazorpayOrder(totalOrderAmount, `goat_${goatId}`);
     } catch (rzpErr) {
       // Revert reservation if Razorpay order creation fails
       await Goat.findByIdAndUpdate(goatId, { status: "sale" });
@@ -117,10 +126,6 @@ export async function POST(req: NextRequest) {
       note: delivery.note ? sanitizeString(delivery.note) : "",
     };
 
-    // Phase 2: Compute authoritative server-side financial snapshot
-    // Uses the authoritative seller base price from MongoDB (reservedGoat.price)
-    const financials = calculateOrderFinancials(reservedGoat.price);
-
     let order;
     try {
       order = await Order.create({
@@ -132,11 +137,15 @@ export async function POST(req: NextRequest) {
         sellerName: reservedGoat.sellerName,
         customer: user.id,
         customerName: user.name,
-        amount: reservedGoat.price,
+        amount: financials.totalAmount,
         status: "pending",
 
         // Phase 2: Permanent immutable financial snapshot
         sellerBasePrice: financials.sellerBasePrice,
+        deliveryCharge: financials.deliveryCharge,
+        buyerPlatformFee: financials.buyerPlatformFee,
+        sellerDeliveryAmount: financials.sellerDeliveryAmount,
+        sellerGoatNet: financials.sellerGoatNet,
         commissionRate: financials.commissionRate,
         commissionAmount: financials.commissionAmount,
         sellerNetPayable: financials.sellerNetPayable,
@@ -218,6 +227,10 @@ export async function POST(req: NextRequest) {
       status: "success",
       metadata: {
         sellerBasePrice: order.sellerBasePrice,
+        deliveryCharge: order.deliveryCharge,
+        buyerPlatformFee: order.buyerPlatformFee,
+        sellerDeliveryAmount: order.sellerDeliveryAmount,
+        sellerGoatNet: order.sellerGoatNet,
         commissionRate: order.commissionRate,
         commissionAmount: order.commissionAmount,
         sellerNetPayable: order.sellerNetPayable,
@@ -231,7 +244,7 @@ export async function POST(req: NextRequest) {
       data: {
         orderId: order._id.toString(),
         razorpayOrderId: rzpOrder.id,
-        amount: reservedGoat.price,
+        amount: financials.totalAmount,
         keyId: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "",
         isMock: false,
       },

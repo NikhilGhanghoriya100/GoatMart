@@ -592,3 +592,267 @@ export async function initiateOrderPayout(
     };
   }
 }
+
+export interface RecordManualPayoutParams {
+  orderId: string;
+  performedBy: string;
+  performedByName?: string;
+  payoutMethod: "UPI" | "BANK";
+  referenceId: string;
+  amount: number;
+  paidAt?: Date | string;
+  adminNote?: string;
+}
+
+export interface ManualPayoutResult {
+  success: boolean;
+  code?:
+    | "ORDER_NOT_FOUND"
+    | "UNAUTHORIZED"
+    | "NOT_DELIVERED"
+    | "PAYMENT_NOT_PAID"
+    | "REFUND_ACTIVE"
+    | "ORDER_CANCELLED"
+    | "ORDER_REFUNDED"
+    | "MISSING_FINANCIAL_SNAPSHOT"
+    | "INVALID_PAYOUT_AMOUNT"
+    | "AMOUNT_MISMATCH"
+    | "MISSING_REFERENCE_ID"
+    | "ALREADY_PAID"
+    | "CONCURRENT_MODIFICATION"
+    | "SERVER_ERROR";
+  error?: string;
+  message?: string;
+  order?: IOrder | null;
+  status?: PayoutStatus;
+  referenceId?: string;
+  amount?: number;
+  paidAt?: Date;
+}
+
+/**
+ * Records a manual seller payout performed externally by the admin (outside Razorpay Route).
+ * 
+ * Strict Server-Side Controls:
+ * 1. Admin Authorization verified by caller.
+ * 2. Order delivered, payment paid, no active refund.
+ * 3. Paid amount strictly validated against authoritative order.sellerNetPayable.
+ * 4. UTR/Reference ID is required.
+ * 5. Atomic state update prevents double-payout.
+ * 6. Permanent append-only financial audit log entry recorded.
+ */
+export async function recordManualOrderPayout(
+  params: RecordManualPayoutParams
+): Promise<ManualPayoutResult> {
+  const {
+    orderId,
+    performedBy,
+    performedByName = "Admin",
+    payoutMethod,
+    referenceId,
+    amount,
+    paidAt,
+    adminNote,
+  } = params;
+
+  if (!orderId || !mongoose.Types.ObjectId.isValid(orderId)) {
+    return {
+      success: false,
+      code: "ORDER_NOT_FOUND",
+      error: "Invalid or missing orderId",
+    };
+  }
+
+  const cleanReference = String(referenceId || "").trim();
+  if (!cleanReference || cleanReference.length < 3) {
+    return {
+      success: false,
+      code: "MISSING_REFERENCE_ID",
+      error: "Transaction reference / UTR ID is required (minimum 3 characters)",
+    };
+  }
+
+  if (payoutMethod !== "UPI" && payoutMethod !== "BANK") {
+    return {
+      success: false,
+      code: "SERVER_ERROR",
+      error: "Invalid payment method: must be 'UPI' or 'BANK'",
+    };
+  }
+
+  const order = await Order.findById(orderId);
+  if (!order) {
+    return {
+      success: false,
+      code: "ORDER_NOT_FOUND",
+      error: `Order '${orderId}' not found`,
+    };
+  }
+
+  if (order.status === "cancelled") {
+    return {
+      success: false,
+      code: "ORDER_CANCELLED",
+      error: "Cannot record payout for a cancelled order",
+    };
+  }
+
+  if (order.status === "refunded") {
+    return {
+      success: false,
+      code: "ORDER_REFUNDED",
+      error: "Cannot record payout for a refunded order",
+    };
+  }
+
+  if (order.status !== "delivered") {
+    return {
+      success: false,
+      code: "NOT_DELIVERED",
+      error: `Order must be delivered before paying seller (current status: '${order.status}')`,
+    };
+  }
+
+  if (order.payment?.status !== "paid") {
+    return {
+      success: false,
+      code: "PAYMENT_NOT_PAID",
+      error: "Order payment has not been confirmed as paid",
+    };
+  }
+
+  const refundStatus = order.refund?.status;
+  if (
+    refundStatus === "pending" ||
+    refundStatus === "processing" ||
+    refundStatus === "processed" ||
+    refundStatus === "failed"
+  ) {
+    return {
+      success: false,
+      code: "REFUND_ACTIVE",
+      error: `Order has active refund state '${refundStatus}' and cannot be paid`,
+    };
+  }
+
+  if (
+    typeof order.sellerNetPayable !== "number" ||
+    isNaN(order.sellerNetPayable) ||
+    order.sellerNetPayable <= 0
+  ) {
+    return {
+      success: false,
+      code: "MISSING_FINANCIAL_SNAPSHOT",
+      error: "Order is missing authoritative sellerNetPayable financial snapshot",
+    };
+  }
+
+  // Authoritative amount validation: paid amount must match sellerNetPayable to the exact paise
+  const authoritativePaise = Math.round(order.sellerNetPayable * 100);
+  const providedPaise = Math.round(Number(amount) * 100);
+
+  if (authoritativePaise !== providedPaise) {
+    return {
+      success: false,
+      code: "AMOUNT_MISMATCH",
+      error: `Paid amount (₹${amount}) does not match authoritative seller payable amount (₹${order.sellerNetPayable}). Arbitrary amounts are not allowed.`,
+    };
+  }
+
+  // Idempotency: cannot pay an already paid order
+  if (order.payout?.status === "paid") {
+    return {
+      success: false,
+      code: "ALREADY_PAID",
+      error: "Payout has already been marked as paid for this order",
+      order,
+      status: "paid",
+    };
+  }
+
+  const paymentDate = paidAt ? new Date(paidAt) : new Date();
+  const dateStr = paymentDate.toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+
+  // Atomic state transition: ensures concurrent requests cannot double-pay
+  const updatedOrder = await Order.findOneAndUpdate(
+    {
+      _id: order._id,
+      "payout.status": { $ne: "paid" },
+    },
+    {
+      $set: {
+        "payout.status": "paid",
+        "payout.isManual": true,
+        "payout.payoutMethod": payoutMethod,
+        "payout.referenceId": cleanReference,
+        "payout.utrNumber": cleanReference,
+        "payout.transferId": cleanReference,
+        "payout.amount": order.sellerNetPayable,
+        "payout.currency": order.currency || "INR",
+        "payout.paidAt": paymentDate,
+        "payout.processedAt": paymentDate,
+        "payout.paidBy": new mongoose.Types.ObjectId(performedBy),
+        "payout.paidByName": performedByName,
+        "payout.adminNote": adminNote ? String(adminNote).trim().slice(0, 500) : "",
+      },
+      $push: {
+        timeline: {
+          s: "Seller Payout Paid Manually",
+          d: dateStr,
+          done: true,
+          updatedAt: paymentDate,
+        },
+      },
+    },
+    { new: true }
+  );
+
+  if (!updatedOrder) {
+    return {
+      success: false,
+      code: "CONCURRENT_MODIFICATION",
+      error: "Failed to record manual payout: payout status was modified concurrently",
+    };
+  }
+
+  // Append-only audit log entry
+  await logFinancialEvent({
+    action: "payout_paid",
+    entityType: "payout",
+    entityId: updatedOrder._id.toString(),
+    orderId: updatedOrder.orderId,
+    actorId: performedBy,
+    actorRole: "admin",
+    actorName: performedByName,
+    amount: order.sellerNetPayable,
+    currency: order.currency || "INR",
+    previousState: order.payout?.status || "unpaid",
+    newState: "paid",
+    providerReference: cleanReference,
+    status: "success",
+    metadata: {
+      isManual: true,
+      payoutMethod,
+      referenceId: cleanReference,
+      utrNumber: cleanReference,
+      sellerId: order.seller.toString(),
+      sellerName: order.sellerName,
+      sellerNetPayable: order.sellerNetPayable,
+      adminNote,
+    },
+  });
+
+  return {
+    success: true,
+    message: `Manual payout of ₹${order.sellerNetPayable.toLocaleString("en-IN")} recorded successfully (${payoutMethod}: ${cleanReference})`,
+    order: updatedOrder,
+    status: "paid",
+    referenceId: cleanReference,
+    amount: order.sellerNetPayable,
+    paidAt: paymentDate,
+  };
+}

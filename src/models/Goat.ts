@@ -7,6 +7,7 @@ export interface IGoat extends Document {
   weight: number;
   age: string;
   price: number;
+  deliveryCharge?: number;
   status: "sale" | "sold" | "reserved" | string;
   health: string;
   vaccinated: boolean;
@@ -44,6 +45,7 @@ const GoatSchema = new Schema<IGoat>(
     weight: { type: Number, required: true },
     age: { type: String, required: true },
     price: { type: Number, required: true },
+    deliveryCharge: { type: Number, default: 0, min: 0 },
     status: { type: String, default: "sale" },
     currentOrderId: { type: Schema.Types.ObjectId, ref: "Order" },
     health: { type: String, default: "Good" },

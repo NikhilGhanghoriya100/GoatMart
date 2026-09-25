@@ -1,3 +1,4 @@
+/// <reference path="../types/next-auth.d.ts" />
 import { NextAuthOptions, getServerSession } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import connectDB from "./db";

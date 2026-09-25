@@ -10,6 +10,24 @@ export interface ISellerBankDetails {
   isVerified: boolean;
 }
 
+export type PaymentVerificationStatus = "not_submitted" | "pending" | "approved" | "rejected";
+
+export interface ISellerPaymentDetails {
+  paymentMethod: "UPI" | "BANK";
+  phone: string;
+  upiId?: string;
+  accountHolderName?: string;
+  bankName?: string;
+  accountNumber?: string;
+  ifscCode?: string;
+  paymentNote?: string;
+  verificationStatus: PaymentVerificationStatus;
+  verifiedAt?: Date;
+  verifiedBy?: mongoose.Types.ObjectId;
+  rejectionReason?: string;
+  updatedAt?: Date;
+}
+
 export type PayoutOnboardingStatus = "not_started" | "pending" | "active" | "rejected";
 
 export interface ISellerPayoutOnboarding {
@@ -44,6 +62,7 @@ export interface IUser extends Document {
     totalSales: number;
     joinedAt: Date;
     bankDetails?: ISellerBankDetails;
+    paymentDetails?: ISellerPaymentDetails;
     payoutOnboarding?: ISellerPayoutOnboarding;
   };
   wishlist: mongoose.Types.ObjectId[];
@@ -85,6 +104,25 @@ const UserSchema = new Schema<IUser>(
         bankName: { type: String, trim: true },
         upiId: { type: String, trim: true },
         isVerified: { type: Boolean, default: false },
+      },
+      paymentDetails: {
+        paymentMethod: { type: String, enum: ["UPI", "BANK"] },
+        phone: { type: String, trim: true },
+        upiId: { type: String, trim: true },
+        accountHolderName: { type: String, trim: true },
+        bankName: { type: String, trim: true },
+        accountNumber: { type: String, trim: true },
+        ifscCode: { type: String, uppercase: true, trim: true },
+        paymentNote: { type: String, trim: true },
+        verificationStatus: {
+          type: String,
+          enum: ["not_submitted", "pending", "approved", "rejected"],
+          default: "not_submitted",
+        },
+        verifiedAt: Date,
+        verifiedBy: { type: Schema.Types.ObjectId, ref: "User" },
+        rejectionReason: { type: String, trim: true },
+        updatedAt: Date,
       },
       payoutOnboarding: {
         razorpayAccountId: { type: String, trim: true },

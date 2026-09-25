@@ -24,6 +24,7 @@ const updateGoatSchema = z.object({
   weight: z.number().positive().max(300).optional(),
   age: z.string().min(1).max(50).optional(),
   price: z.number().positive().max(10000000).optional(),
+  deliveryCharge: z.number().min(0).max(100000).optional(),
   status: z.enum(["sale", "sold", "reserved"]).optional(),
   health: z.enum(["Excellent", "Good", "Fair"]).optional(),
   vaccinated: z.boolean().optional(),
@@ -112,6 +113,7 @@ export async function PATCH(
     if (validData.weight !== undefined) updateData.weight = validData.weight;
     if (validData.age !== undefined) updateData.age = sanitizeString(validData.age);
     if (validData.price !== undefined) updateData.price = validData.price;
+    if (validData.deliveryCharge !== undefined) updateData.deliveryCharge = validData.deliveryCharge;
     if (validData.status !== undefined) updateData.status = validData.status;
     if (validData.health !== undefined) updateData.health = validData.health;
     if (validData.vaccinated !== undefined) updateData.vaccinated = validData.vaccinated;

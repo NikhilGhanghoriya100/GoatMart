@@ -18,10 +18,13 @@ export type FinancialAuditEventType =
   | "payout_paid"
   | "payout_failed"
   | "payout_retried"
-  | "reconciliation_run";
+  | "reconciliation_run"
+  | "expense_recorded"
+  | "seller_payment_details_updated"
+  | "seller_payment_details_verified";
 
 export type AuditActorRole = "customer" | "seller" | "admin" | "system" | "webhook";
-export type AuditEntityType = "order" | "payout" | "refund" | "payment" | "reconciliation";
+export type AuditEntityType = "order" | "payout" | "refund" | "payment" | "reconciliation" | "seller";
 
 export interface IFinancialAuditLog extends Document {
   _id: mongoose.Types.ObjectId;
@@ -52,7 +55,7 @@ const FinancialAuditLogSchema = new Schema<IFinancialAuditLog>(
     },
     entityType: {
       type: String,
-      enum: ["order", "payout", "refund", "payment", "reconciliation"],
+      enum: ["order", "payout", "refund", "payment", "reconciliation", "seller"],
       required: true,
       index: true,
     },

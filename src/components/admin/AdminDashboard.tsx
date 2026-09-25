@@ -913,12 +913,16 @@ export default function AdminDashboard() {
       axios.get("/api/sellers"),
       axios.get("/api/orders"),
       axios.get("/api/goats?status=all&limit=50"),
+      axios.get("/api/admin/users?role=customer"),
+      axios.get("/api/chat"),
     ])
-      .then(([s, sel, ord, g]) => {
+      .then(([s, sel, ord, g, cust, ch]) => {
         if (s.data.success) setStats(s.data.data);
         if (sel.data.success) setSellers(sel.data.data);
         if (ord.data.success) setOrders(ord.data.data);
         if (g.data.success) setGoats(g.data.data);
+        if (cust?.data?.success) setCustomers(cust.data.data || []);
+        if (ch?.data?.success) setChats(ch.data.data || []);
       })
       .catch((error) => {
         console.error("Failed to load admin dashboard data:", error);
@@ -1592,9 +1596,14 @@ export default function AdminDashboard() {
 
                             <div className="text-xs text-gray-400 font-sans mt-1">
                               📧 {s.email} • 📱{" "}
-                              {s.phone || "No phone"} • 📍{" "}
-                              {s.sellerProfile?.location ||
-                                "Not specified"}
+                              {s.phone ? (
+                                <a href={`tel:${s.phone}`} className="text-emerald-400 hover:underline font-mono font-medium">
+                                  {s.phone}
+                                </a>
+                              ) : (
+                                "No phone"
+                              )}{" "}
+                              • 📍 {s.sellerProfile?.location || "Not specified"}
                             </div>
 
                             <div className="text-xs text-[#c8a96e] font-sans mt-1">
@@ -1815,7 +1824,7 @@ export default function AdminDashboard() {
                           )}
 
                           <a
-                            href={`/chat?id=${c._id}`}
+                            href={`/chat/${c._id}`}
                             className="px-4 py-2 rounded-full text-xs font-bold font-sans bg-[#c8a96e] text-black hover:opacity-90 transition-opacity flex items-center gap-1"
                           >
                             Open Chat →

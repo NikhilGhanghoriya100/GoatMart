@@ -14,7 +14,9 @@ import {
 import {
   checkOrderPayoutEligibility,
   initiateOrderPayout,
+  recordManualOrderPayout,
 } from "@/lib/orderPayout";
+import { sanitizeSellerPaymentDetails } from "@/lib/paymentDetails";
 
 /**
  * GET /api/admin/payouts/[orderId]
@@ -48,7 +50,7 @@ export async function GET(
 
     const seller = await User.findById(order.seller)
       .select(
-        "name email phone sellerProfile.farmName sellerProfile.status sellerProfile.payoutOnboarding.status sellerProfile.payoutOnboarding.razorpayAccountId"
+        "name email phone sellerProfile.farmName sellerProfile.status sellerProfile.paymentDetails sellerProfile.bankDetails sellerProfile.payoutOnboarding.status sellerProfile.payoutOnboarding.razorpayAccountId"
       )
       .lean();
 
@@ -68,12 +70,17 @@ export async function GET(
           id: seller?._id?.toString() || order.seller?.toString(),
           name: seller?.name || order.sellerName,
           email: seller?.email,
+          phone: seller?.phone || seller?.sellerProfile?.paymentDetails?.phone || "",
           farmName: seller?.sellerProfile?.farmName,
           isApproved: seller?.sellerProfile?.status === "approved",
+          paymentDetails: sanitizeSellerPaymentDetails(seller?.sellerProfile?.paymentDetails, seller?.phone),
           onboardingStatus: seller?.sellerProfile?.payoutOnboarding?.status || "not_started",
           razorpayAccountId: seller?.sellerProfile?.payoutOnboarding?.razorpayAccountId || null,
         },
         sellerBasePrice: order.sellerBasePrice ?? order.amount,
+        deliveryCharge: order.deliveryCharge ?? 0,
+        sellerDeliveryAmount: order.sellerDeliveryAmount ?? (order.deliveryCharge ?? 0),
+        sellerGoatNet: order.sellerGoatNet ?? (order.sellerBasePrice ? order.sellerBasePrice - (order.commissionAmount ?? 0) : order.amount),
         commissionRate: order.commissionRate ?? 2.0,
         commissionAmount: order.commissionAmount ?? 0,
         sellerNetPayable: order.sellerNetPayable ?? 0,
@@ -95,12 +102,12 @@ export async function GET(
 
 /**
  * POST /api/admin/payouts/[orderId]
- * Initiates an authoritative seller payout for the specified order.
+ * Initiates an authoritative seller payout or records a manual payout for the specified order.
  * Strictly restricted to administrators.
  * Never accepts client-provided amounts or destination accounts.
  */
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   context: { params: Promise<{ orderId: string }> }
 ) {
   try {
@@ -118,7 +125,63 @@ export async function POST(
       return badRequestResponse("Invalid Order ID format");
     }
 
+    let body: any = {};
+    try {
+      body = await req.json();
+    } catch {
+      // Body may be empty for automated payout tests
+      body = {};
+    }
+
     await connectDB();
+
+    // Check if recording a manual payout
+    if (body.referenceId || body.utrNumber || body.payoutMethod || body.isManual) {
+      const manualResult = await recordManualOrderPayout({
+        orderId,
+        performedBy: user.id,
+        performedByName: user.name || "Admin",
+        payoutMethod: body.payoutMethod === "UPI" ? "UPI" : "BANK",
+        referenceId: body.referenceId || body.utrNumber,
+        amount: body.amount !== undefined ? Number(body.amount) : 0,
+        paidAt: body.paidAt,
+        adminNote: body.adminNote,
+      });
+
+      if (!manualResult.success) {
+        const statusCode =
+          manualResult.code === "ORDER_NOT_FOUND"
+            ? 404
+            : manualResult.code === "ALREADY_PAID" ||
+              manualResult.code === "CONCURRENT_MODIFICATION"
+            ? 409
+            : manualResult.code === "UNAUTHORIZED"
+            ? 403
+            : 400;
+
+        return NextResponse.json(
+          {
+            success: false,
+            code: manualResult.code,
+            error: manualResult.error,
+            status: manualResult.status,
+          },
+          { status: statusCode }
+        );
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          orderId: manualResult.order?.orderId,
+          payoutStatus: manualResult.status,
+          transferId: manualResult.referenceId,
+          referenceId: manualResult.referenceId,
+          amount: manualResult.amount,
+          message: manualResult.message,
+        },
+      });
+    }
 
     // Call authoritative Step 9C payout engine
     const result = await initiateOrderPayout({

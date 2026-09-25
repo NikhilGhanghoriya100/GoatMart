@@ -3,6 +3,7 @@ import Order, { IOrder } from "@/models/Order";
 import Goat from "@/models/Goat";
 import { createRazorpayRefund } from "@/lib/razorpay";
 import { logFinancialEvent } from "@/lib/auditLogger";
+import { calculateRefundFinancials } from "@/lib/commission";
 
 export interface CancelOrderParams {
   orderId: string;
@@ -19,6 +20,7 @@ export interface CancelOrderResult {
     | "ALREADY_CANCELLED"
     | "ALREADY_REFUNDED"
     | "NOT_ELIGIBLE"
+    | "INVENTORY_RESTORE_FAILED"
     | "REFUND_IN_PROGRESS"
     | "REFUND_FAILED"
     | "MISSING_PAYMENT_ID"
@@ -34,8 +36,19 @@ export interface CancelOrderResult {
 
 /**
  * Shared authoritative cancellation and refund handler for GoatMart.
- * Enforces server-side authorization, atomic state transitions, idempotent refunds,
- * safe inventory restoration, and preserves the permanent financial snapshot.
+ * 
+ * STRICT BUSINESS RULES:
+ * 1. Validate cancellation eligibility and server authorization.
+ * 2. RESTORE GOAT TO INVENTORY FIRST:
+ *    Atomically transition goat from "sold" to "sale".
+ *    If inventory restoration fails or goat cannot be restored, ABORT refund,
+ *    log audit event, and return error without modifying refund or order status.
+ * 3. Calculate refund financials:
+ *    - Refund commission = 3.5% of TOTAL customer payment (price + delivery).
+ *    - Deduct admin-approved platform and seller expenses stored on the order.
+ *    - Final Refund = Total Paid - 3.5% commission - platformExpense - sellerExpense.
+ * 4. Call Razorpay refund API for finalRefundAmount.
+ * 5. Update order status to "refunded", record breakdown and cancellation snapshot.
  */
 export async function cancelAndRefundOrder(
   params: CancelOrderParams
@@ -232,12 +245,61 @@ export async function cancelAndRefundOrder(
     };
   }
 
-  // Authoritative amount strictly from the stored order document in integer paise
-  const refundAmountRupees = order.amount;
+  // STEP 2: RESTORE GOAT TO INVENTORY FIRST (Strict Business Rule)
+  // Verify inventory update BEFORE calling Razorpay or marking order refunded.
+  // If restoration fails, ABORT immediately.
+  const restoredGoat = await Goat.findOneAndUpdate(
+    {
+      _id: order.goat,
+      status: "sold",
+      $or: [
+        { currentOrderId: order._id },
+        { currentOrderId: null },
+        { currentOrderId: { $exists: false } },
+      ],
+    },
+    { $set: { status: "sale", currentOrderId: null } },
+    { new: true }
+  );
+
+  if (!restoredGoat) {
+    await logFinancialEvent({
+      action: "refund_failed",
+      entityType: "order",
+      entityId: order._id.toString(),
+      orderId: order._id.toString(),
+      actorId: userId,
+      actorRole: userRole,
+      amount: order.amount,
+      currency: order.currency || "INR",
+      previousState: order.status,
+      newState: order.status,
+      status: "failure",
+      reason: "Inventory restoration failed: Goat listing could not be restored to sale status",
+      metadata: { orderNumber: order.orderId, goatId: order.goat?.toString() },
+    });
+
+    return {
+      success: false,
+      code: "INVENTORY_RESTORE_FAILED",
+      error: "Unable to restore goat to inventory. Cancellation and refund aborted to maintain inventory integrity.",
+    };
+  }
+
+  // STEP 3: COMPUTE REFUND FINANCIALS (3.5% commission + stored expenses)
+  const platformExpense = (order.expenses || [])
+    .filter((e: any) => e.type === "platform")
+    .reduce((acc: number, e: any) => acc + (e.amount || 0), 0);
+
+  const sellerExpense = (order.expenses || [])
+    .filter((e: any) => e.type === "seller")
+    .reduce((acc: number, e: any) => acc + (e.amount || 0), 0);
+
+  const refundFinancials = calculateRefundFinancials(order.amount, platformExpense, sellerExpense);
+  const refundAmountRupees = refundFinancials.finalRefundAmount;
   const refundAmountPaise = Math.round(refundAmountRupees * 100);
 
   // Acquire concurrency lock via atomic conditional update:
-  // Strictly requires status to not be already cancelled/refunded and refund.status to not be processing/processed
   const lockedOrder = await Order.findOneAndUpdate(
     {
       _id: order._id,
@@ -261,7 +323,11 @@ export async function cancelAndRefundOrder(
   );
 
   if (!lockedOrder) {
-    // Check if another concurrent request already refunded or locked it
+    // Revert goat back to sold if order could not be locked
+    await Goat.findByIdAndUpdate(order.goat, {
+      $set: { status: "sold", currentOrderId: order._id },
+    });
+
     const refreshed = await Order.findById(order._id);
     if (refreshed?.status === "refunded" || refreshed?.refund?.status === "processed") {
       return {
@@ -284,57 +350,78 @@ export async function cancelAndRefundOrder(
     };
   }
 
-  // Call Razorpay Refund API
-  let rzpRefund: any;
-  try {
-    rzpRefund = await createRazorpayRefund({
-      paymentId: razorpayPaymentId,
-      amountPaise: refundAmountPaise,
-      notes: {
-        orderId: order.orderId,
-        cancellationReason,
-      },
-      receipt: `rfnd_${order.orderId}`,
-    });
-  } catch (error: any) {
-    console.error("[Razorpay Refund Error]:", error?.message || error);
+  // STEP 4: Call Razorpay Refund API
+  let rzpRefund: any = null;
+  if (refundAmountPaise > 0) {
+    try {
+      rzpRefund = await createRazorpayRefund({
+        paymentId: razorpayPaymentId,
+        amountPaise: refundAmountPaise,
+        notes: {
+          orderId: order.orderId,
+          cancellationReason,
+          refundCommissionRate: String(refundFinancials.refundCommissionRate),
+          refundCommissionAmount: String(refundFinancials.refundCommissionAmount),
+          platformExpense: String(refundFinancials.platformExpense),
+          sellerExpense: String(refundFinancials.sellerExpense),
+        },
+        receipt: `rfnd_${order.orderId}`,
+      });
+    } catch (error: any) {
+      console.error("[Razorpay Refund Error]:", error?.message || error);
 
-    // Atomically reset refund state to failed so user or admin can safely retry later
-    await Order.findByIdAndUpdate(order._id, {
-      $set: {
-        "refund.status": "failed",
-        "refund.failedAt": new Date(),
-        "refund.failureReason": error?.message || "Razorpay API error",
-      },
-    });
+      // Revert goat back to sold so it remains tied to the active order
+      await Goat.findByIdAndUpdate(order.goat, {
+        $set: { status: "sold", currentOrderId: order._id },
+      });
 
-    await logFinancialEvent({
-      action: "refund_failed",
-      entityType: "refund",
-      entityId: razorpayPaymentId,
-      orderId: order._id.toString(),
-      actorId: userId,
-      actorRole: userRole,
-      amount: refundAmountRupees,
-      currency: order.currency || "INR",
-      previousState: "processing",
-      newState: "failed",
-      providerReference: razorpayPaymentId,
-      status: "failure",
-      reason: error?.message || "Razorpay API error",
-      metadata: { orderNumber: order.orderId },
-    });
+      // Atomically reset refund state to failed so user or admin can safely retry later
+      await Order.findByIdAndUpdate(order._id, {
+        $set: {
+          "refund.status": "failed",
+          "refund.failedAt": new Date(),
+          "refund.failureReason": error?.message || "Razorpay API error",
+        },
+      });
 
-    return {
-      success: false,
-      code: "REFUND_FAILED",
-      error:
-        "Payment refund request could not be completed with Razorpay. The order remains active and safe to retry.",
-    };
+      await logFinancialEvent({
+        action: "refund_failed",
+        entityType: "refund",
+        entityId: razorpayPaymentId,
+        orderId: order._id.toString(),
+        actorId: userId,
+        actorRole: userRole,
+        amount: refundAmountRupees,
+        currency: order.currency || "INR",
+        previousState: "processing",
+        newState: "failed",
+        providerReference: razorpayPaymentId,
+        status: "failure",
+        reason: error?.message || "Razorpay API error",
+        metadata: { orderNumber: order.orderId },
+      });
+
+      return {
+        success: false,
+        code: "REFUND_FAILED",
+        error:
+          "Payment refund request could not be completed with Razorpay. The order remains active and safe to retry.",
+      };
+    }
   }
 
-  // 5. Inspect Provider Refund Status
-  const isProcessedImmediately = rzpRefund.status === "processed";
+  // STEP 5: Inspect Provider Refund Status & Persist Breakdown
+  const isProcessedImmediately = refundAmountPaise === 0 || rzpRefund?.status === "processed";
+
+  const refundBreakdownData = {
+    totalCustomerPaid: refundFinancials.totalCustomerPaid,
+    refundCommissionRate: refundFinancials.refundCommissionRate,
+    refundCommissionAmount: refundFinancials.refundCommissionAmount,
+    platformExpense: refundFinancials.platformExpense,
+    sellerExpense: refundFinancials.sellerExpense,
+    totalDeductions: refundFinancials.totalDeductions,
+    finalRefundAmount: refundFinancials.finalRefundAmount,
+  };
 
   if (isProcessedImmediately) {
     const processedAt = new Date();
@@ -345,14 +432,21 @@ export async function cancelAndRefundOrder(
           status: "refunded",
           "payment.status": "refunded",
           "refund.status": "processed",
-          "refund.refundId": rzpRefund.id,
+          "refund.refundId": rzpRefund?.id || "NO_REFUND_DEDUCTIONS_EXCEEDED",
           "refund.amount":
-            typeof rzpRefund.amount === "number"
+            typeof rzpRefund?.amount === "number"
               ? rzpRefund.amount / 100
               : refundAmountRupees,
-          "refund.currency": rzpRefund.currency || "INR",
+          "refund.currency": rzpRefund?.currency || "INR",
           "refund.processedAt": processedAt,
+          "refund.breakdown": refundBreakdownData,
           "cancellation.cancelledAt": processedAt,
+          "cancellation.refundCommissionRate": refundFinancials.refundCommissionRate,
+          "cancellation.refundCommissionAmount": refundFinancials.refundCommissionAmount,
+          "cancellation.platformExpense": refundFinancials.platformExpense,
+          "cancellation.sellerExpense": refundFinancials.sellerExpense,
+          "cancellation.totalDeductions": refundFinancials.totalDeductions,
+          "cancellation.finalRefundAmount": refundFinancials.finalRefundAmount,
         },
         $push: {
           timeline: {
@@ -366,66 +460,54 @@ export async function cancelAndRefundOrder(
       { new: true }
     );
 
-    // 6. Release goat safely back to "sale" ONLY if it is still 'sold' AND associated with this order
-    // NEVER if it is 'reserved' by another order or sold to another order!
-    await Goat.findOneAndUpdate(
-      {
-        _id: order.goat,
-        status: "sold",
-        $or: [
-          { currentOrderId: order._id },
-          { currentOrderId: null },
-          { currentOrderId: { $exists: false } },
-        ],
-      },
-      { $set: { status: "sale", currentOrderId: null } }
-    );
-
     await logFinancialEvent({
       action: "refund_processed",
       entityType: "refund",
-      entityId: rzpRefund.id,
+      entityId: rzpRefund?.id || "NO_REFUND_DEDUCTIONS_EXCEEDED",
       orderId: order._id.toString(),
       actorId: userId,
       actorRole: userRole,
-      amount:
-        typeof rzpRefund.amount === "number"
-          ? rzpRefund.amount / 100
-          : refundAmountRupees,
-      currency: rzpRefund.currency || "INR",
+      amount: refundAmountRupees,
+      currency: order.currency || "INR",
       previousState: "processing",
       newState: "processed",
-      providerReference: rzpRefund.id,
+      providerReference: rzpRefund?.id,
       status: "success",
-      metadata: { orderNumber: order.orderId },
+      metadata: {
+        orderNumber: order.orderId,
+        refundBreakdown: refundBreakdownData,
+      },
     });
 
     return {
       success: true,
       order: finalOrder,
       refundInitiated: true,
-      refundId: rzpRefund.id,
-      refundAmount:
-        typeof rzpRefund.amount === "number"
-          ? rzpRefund.amount / 100
-          : refundAmountRupees,
+      refundId: rzpRefund?.id,
+      refundAmount: refundAmountRupees,
       message: "Order cancelled and payment successfully refunded",
     };
   } else {
     // Provider created/initiated refund, but it is pending/processing
-    // Persist processing state and wait for refund.processed webhook confirmation
     const finalOrder = await Order.findByIdAndUpdate(
       order._id,
       {
         $set: {
           "refund.status": "processing",
-          "refund.refundId": rzpRefund.id,
+          "refund.refundId": rzpRefund?.id,
           "refund.amount":
-            typeof rzpRefund.amount === "number"
+            typeof rzpRefund?.amount === "number"
               ? rzpRefund.amount / 100
               : refundAmountRupees,
-          "refund.currency": rzpRefund.currency || "INR",
+          "refund.currency": rzpRefund?.currency || "INR",
+          "refund.breakdown": refundBreakdownData,
           "cancellation.cancelledAt": new Date(),
+          "cancellation.refundCommissionRate": refundFinancials.refundCommissionRate,
+          "cancellation.refundCommissionAmount": refundFinancials.refundCommissionAmount,
+          "cancellation.platformExpense": refundFinancials.platformExpense,
+          "cancellation.sellerExpense": refundFinancials.sellerExpense,
+          "cancellation.totalDeductions": refundFinancials.totalDeductions,
+          "cancellation.finalRefundAmount": refundFinancials.finalRefundAmount,
         },
         $push: {
           timeline: {
@@ -442,32 +524,28 @@ export async function cancelAndRefundOrder(
     await logFinancialEvent({
       action: "refund_initiated",
       entityType: "refund",
-      entityId: rzpRefund.id,
+      entityId: rzpRefund?.id || "unknown",
       orderId: order._id.toString(),
       actorId: userId,
       actorRole: userRole,
-      amount:
-        typeof rzpRefund.amount === "number"
-          ? rzpRefund.amount / 100
-          : refundAmountRupees,
-      currency: rzpRefund.currency || "INR",
+      amount: refundAmountRupees,
+      currency: rzpRefund?.currency || "INR",
       previousState: "paid",
       newState: "processing",
-      providerReference: rzpRefund.id,
+      providerReference: rzpRefund?.id,
       status: "success",
-      metadata: { orderNumber: order.orderId },
+      metadata: {
+        orderNumber: order.orderId,
+        refundBreakdown: refundBreakdownData,
+      },
     });
 
-    // DO NOT release goat yet, DO NOT mark payment.status as refunded yet
     return {
       success: true,
       order: finalOrder,
       refundInitiated: true,
-      refundId: rzpRefund.id,
-      refundAmount:
-        typeof rzpRefund.amount === "number"
-          ? rzpRefund.amount / 100
-          : refundAmountRupees,
+      refundId: rzpRefund?.id,
+      refundAmount: refundAmountRupees,
       message:
         "Refund initiated with Razorpay. Status will update once confirmation is received.",
     };

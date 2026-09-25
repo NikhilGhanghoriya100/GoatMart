@@ -48,6 +48,13 @@ export default function CheckoutModal({ goat, onClose }: { goat: Goat; onClose: 
   const [errors, setErrors] = useState<Partial<DeliveryForm>>({});
   const [loading, setLoading] = useState(false);
 
+  const deliveryCharge =
+    typeof (goat as any).deliveryCharge === "number" && (goat as any).deliveryCharge >= 0
+      ? (goat as any).deliveryCharge
+      : 0;
+  const buyerPlatformFee = Math.round((goat.price || 0) * 0.02);
+  const totalAmount = (goat.price || 0) + deliveryCharge + buyerPlatformFee;
+
   // Preload customer address if available
   useEffect(() => {
     if (session?.user) {
@@ -481,14 +488,32 @@ export default function CheckoutModal({ goat, onClose }: { goat: Goat; onClose: 
           </div>
 
           {/* Amount Box */}
-          <div className="flex justify-between items-center py-3.5 border-t border-gray-100 mb-4">
-            <div>
-              <span className="text-xs text-gray-500 font-sans block">{t.totalAmount}</span>
-              <span className="text-[10px] text-emerald-700 font-sans font-bold">
-                {isHindi ? "100% सुरक्षित भुगतान" : "100% Buyer Protected"}
+          <div className="py-3.5 border-t border-gray-100 mb-4 space-y-2">
+            <div className="flex justify-between text-xs text-gray-500 font-sans">
+              <span>{isHindi ? "बकरे की कीमत" : "Goat Price"}:</span>
+              <span className="font-medium text-gray-900">{fmt(goat.price)}</span>
+            </div>
+            <div className="flex justify-between text-xs text-gray-500 font-sans">
+              <span>{isHindi ? "डिलीवरी शुल्क" : "Delivery Fee"}:</span>
+              <span className="font-medium text-emerald-700">
+                {deliveryCharge > 0 ? fmt(deliveryCharge) : (isHindi ? "मुफ़्त डिलीवरी" : "Free Delivery")}
               </span>
             </div>
-            <span className="text-2xl font-bold font-serif text-[#1c1917]">{fmt(goat.price)}</span>
+            <div className="flex justify-between text-xs text-gray-500 font-sans">
+              <span>{isHindi ? "प्लेटफ़ॉर्म शुल्क (2%)" : "Buyer Platform Fee (2%)"}:</span>
+              <span className="font-medium text-amber-800">
+                {fmt(buyerPlatformFee)}
+              </span>
+            </div>
+            <div className="flex justify-between items-center pt-2 border-t border-dashed border-gray-200">
+              <div>
+                <span className="text-xs text-gray-900 font-sans font-bold block">{t.totalAmount}</span>
+                <span className="text-[10px] text-emerald-700 font-sans font-bold">
+                  {isHindi ? "100% सुरक्षित भुगतान" : "100% Buyer Protected"}
+                </span>
+              </div>
+              <span className="text-2xl font-bold font-serif text-[#1c1917]">{fmt(totalAmount)}</span>
+            </div>
           </div>
 
           <div className="flex gap-3">
@@ -509,9 +534,9 @@ export default function CheckoutModal({ goat, onClose }: { goat: Goat; onClose: 
                   {isHindi ? "गेटवे से जुड़ रहे हैं..." : "Connecting Gateway..."}
                 </>
               ) : isHindi ? (
-                `सुरक्षित ${fmt(goat.price)} भुगतान करें 🔒`
+                `सुरक्षित ${fmt(totalAmount)} भुगतान करें 🔒`
               ) : (
-                `Pay ${fmt(goat.price)} Securely 🔒`
+                `Pay ${fmt(totalAmount)} Securely 🔒`
               )}
             </button>
           </div>
@@ -526,7 +551,7 @@ export default function CheckoutModal({ goat, onClose }: { goat: Goat; onClose: 
           </div>
           <h3 className="text-2xl font-bold font-serif text-gray-900 mb-2">{t.paymentSuccess}</h3>
           <p className="text-xs sm:text-sm text-gray-500 font-sans mb-3">{t.paymentSuccessSub}</p>
-          <p className="text-2xl font-bold font-serif text-[#8b5e2a] mb-5">{fmt(goat.price)}</p>
+          <p className="text-2xl font-bold font-serif text-[#8b5e2a] mb-5">{fmt(totalAmount)}</p>
           <div className="p-3 bg-[#faf6ee] rounded-2xl text-xs font-sans text-gray-600 max-w-xs mx-auto">
             {isHindi ? "लाइव ऑर्डर ट्रैकिंग पर जा रहे हैं..." : "Redirecting to live order tracking..."}
           </div>
