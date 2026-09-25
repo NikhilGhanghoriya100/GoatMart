@@ -1578,6 +1578,7 @@ import toast from "react-hot-toast";
 import { fmt } from "@/lib/utils";
 import { BREEDS } from "@/types";
 import { useTranslation } from "@/hooks/useTranslation";
+import { useTheme } from "@/context/ThemeContext";
 import SellerPendingApproval from "@/components/seller/SellerPendingApproval";
 import { calculateListingFeeEstimate, formatCurrencyINR } from "@/lib/commission";
 import {
@@ -1600,6 +1601,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Phone,
+  Sun,
+  Moon,
 } from "lucide-react";
 
 function StatCard({ icon, val, lbl, sub }: any) {
@@ -1647,6 +1650,7 @@ export default function SellerDashboard() {
   const { data: session } = useSession();
   const router = useRouter();
   const { lang, setLang, isHindi, translateBreed } = useTranslation();
+  const { theme, toggleTheme, isDark } = useTheme();
 
   const [tab, setTab] = useState("dashboard");
   const [goats, setGoats] = useState<any[]>([]);
@@ -2413,7 +2417,7 @@ export default function SellerDashboard() {
     "w-full px-3.5 sm:px-4 py-2.5 rounded-xl text-sm font-sans outline-none transition-colors border focus:border-[#c8a96e] bg-[#111] text-gray-200 border-zinc-800 min-w-0";
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen bg-[#0a0a0a] text-gray-200 w-full max-w-full overflow-x-hidden font-sans">
+    <div className="seller-dashboard flex flex-col md:flex-row min-h-screen bg-[#0a0a0a] text-gray-200 w-full max-w-full overflow-x-hidden font-sans">
 
       {/* ================= MOBILE HEADER ================= */}
       <div className="md:hidden p-3 border-b border-zinc-800 bg-[#121212] flex items-center justify-between sticky top-0 z-30 min-h-[58px]">
@@ -2441,6 +2445,29 @@ export default function SellerDashboard() {
         </div>
 
         <div className="flex items-center gap-1.5 flex-shrink-0">
+
+          {/* Theme Toggle (Mobile) */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="w-7 h-7 sm:w-8 sm:h-8 rounded-full border border-zinc-700 bg-zinc-800 flex items-center justify-center text-zinc-300 hover:text-white transition-all shadow-xs"
+            title={
+              isDark
+                ? isHindi
+                  ? "लाइट मोड पर स्विच करें"
+                  : "Switch to Light Mode"
+                : isHindi
+                ? "डार्क मोड पर स्विच करें"
+                : "Switch to Dark Mode"
+            }
+            aria-label="Toggle Dark/Light Mode"
+          >
+            {isDark ? (
+              <Sun size={13} className="text-amber-400" />
+            ) : (
+              <Moon size={13} className="text-zinc-400" />
+            )}
+          </button>
 
           <div className="hidden min-[390px]:flex items-center bg-zinc-800 rounded-full p-0.5 border border-zinc-700">
             <button
@@ -2608,6 +2635,27 @@ export default function SellerDashboard() {
           </button>
 
           <button
+            type="button"
+            onClick={toggleTheme}
+            className="w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl cursor-pointer text-xs font-sans text-gray-300 hover:bg-zinc-800 transition-colors"
+          >
+            {isDark ? (
+              <Sun size={14} className="text-amber-400" />
+            ) : (
+              <Moon size={14} className="text-zinc-400" />
+            )}
+            <span>
+              {isDark
+                ? isHindi
+                  ? "लाइट मोड"
+                  : "Light Mode"
+                : isHindi
+                ? "डार्क मोड"
+                : "Dark Mode"}
+            </span>
+          </button>
+
+          <button
             onClick={() =>
               signOut({ callbackUrl: "/" })
             }
@@ -2649,6 +2697,29 @@ export default function SellerDashboard() {
           </div>
 
           <div className="flex items-center gap-3 flex-shrink-0">
+
+            {/* Theme Toggle (Desktop) */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="w-9 h-9 rounded-full border border-zinc-700 bg-zinc-900 hover:border-[#c8a96e] text-zinc-300 hover:text-white flex items-center justify-center transition-all shadow-xs"
+              title={
+                isDark
+                  ? isHindi
+                    ? "लाइट मोड पर स्विच करें"
+                    : "Switch to Light Mode"
+                  : isHindi
+                  ? "डार्क मोड पर स्विच करें"
+                  : "Switch to Dark Mode"
+              }
+              aria-label="Toggle Dark/Light Mode"
+            >
+              {isDark ? (
+                <Sun size={15} className="text-amber-400" />
+              ) : (
+                <Moon size={15} className="text-zinc-400" />
+              )}
+            </button>
 
             <div className="flex items-center bg-zinc-900 rounded-full p-0.5 border border-zinc-800">
               <button

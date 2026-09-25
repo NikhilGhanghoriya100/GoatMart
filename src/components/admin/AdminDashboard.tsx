@@ -849,6 +849,8 @@ import { fmt } from "@/lib/utils";
 import AdminFinancials from "@/components/admin/AdminFinancials";
 import AdminPayouts from "@/components/admin/AdminPayouts";
 import AdminAuditAndReconciliation from "@/components/admin/AdminAuditAndReconciliation";
+import { useTheme } from "@/context/ThemeContext";
+import { Sun, Moon } from "lucide-react";
 
 const G = "#c8a96e",
   DG = "#8b5e2a";
@@ -870,7 +872,7 @@ function Stat({ icon, val, lbl, clr, onClick }: any) {
   return (
     <div
       onClick={onClick}
-      className={`rounded-2xl p-4 border relative overflow-hidden ${
+      className={`admin-stat-card rounded-2xl p-4 border relative overflow-hidden ${
         onClick ? "cursor-pointer hover:border-[#c8a96e]/50 transition-colors" : ""
       }`}
       style={{
@@ -896,6 +898,7 @@ function Stat({ icon, val, lbl, clr, onClick }: any) {
 export default function AdminDashboard() {
   const { data: session } = useSession();
   const router = useRouter();
+  const { theme, toggleTheme, isDark } = useTheme();
 
   const [tab, setTab] = useState("dashboard");
   const [stats, setStats] = useState<any>(null);
@@ -1082,7 +1085,7 @@ export default function AdminDashboard() {
   );
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen bg-[#0f0f0f] text-gray-200 w-full max-w-full overflow-x-hidden">
+    <div className="admin-dashboard flex flex-col md:flex-row min-h-screen bg-[#0f0f0f] text-gray-200 w-full max-w-full overflow-x-hidden">
       {/* Mobile Top Header */}
       <div className="md:hidden p-4 border-b border-[#1f1f1f] bg-[#141414] flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -1100,6 +1103,21 @@ export default function AdminDashboard() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Theme Toggle (Mobile) */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="w-8 h-8 rounded-full border border-zinc-700 bg-zinc-800 flex items-center justify-center text-zinc-300 hover:text-white transition-all shadow-xs"
+            title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            aria-label="Toggle Dark/Light Mode"
+          >
+            {isDark ? (
+              <Sun size={14} className="text-amber-400" />
+            ) : (
+              <Moon size={14} className="text-zinc-400" />
+            )}
+          </button>
+
           <button
             onClick={() => router.push("/")}
             className="px-2.5 py-1 rounded-lg bg-[#222] text-xs text-gray-300 font-sans"
@@ -1161,6 +1179,19 @@ export default function AdminDashboard() {
         </div>
 
         <div className="p-4 border-t border-[#1f1f1f] space-y-1">
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl cursor-pointer text-sm font-sans text-gray-400 hover:bg-[#1a1a1a] hover:text-gray-200 transition-colors"
+          >
+            {isDark ? (
+              <Sun size={15} className="text-amber-400" />
+            ) : (
+              <Moon size={15} className="text-zinc-400" />
+            )}
+            <span>{isDark ? "Light Mode" : "Dark Mode"}</span>
+          </button>
+
           <div
             onClick={() => router.push("/")}
             className="flex items-center gap-2.5 px-3 py-2 rounded-xl cursor-pointer text-sm font-sans text-gray-400 hover:bg-[#1a1a1a] hover:text-gray-200 transition-colors"
@@ -1199,6 +1230,21 @@ export default function AdminDashboard() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Theme Toggle (Desktop) */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="w-9 h-9 rounded-full border border-zinc-700 bg-zinc-900 hover:border-[#c8a96e] text-zinc-300 hover:text-white flex items-center justify-center transition-all shadow-xs"
+              title={isDark ? "Switch to Light Mode" : "Switch to Dark Mode"}
+              aria-label="Toggle Dark/Light Mode"
+            >
+              {isDark ? (
+                <Sun size={15} className="text-amber-400" />
+              ) : (
+                <Moon size={15} className="text-zinc-400" />
+              )}
+            </button>
+
             <span className="px-3 py-1 rounded-full text-xs font-sans font-semibold bg-emerald-950/60 text-emerald-400 border border-emerald-800/40 flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               System Active

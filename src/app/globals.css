@@ -341,3 +341,183 @@ h1, h2, h3, .font-serif {
 .animate-scaleUp {
   animation: scaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+/* =========================================================
+   Seller & Admin Dashboards - Light Mode Styles
+   ========================================================= */
+
+html:not(.dark) .seller-dashboard,
+html:not(.dark) .admin-dashboard {
+  background-color: #f8fafc !important;
+  color: #1e293b !important;
+}
+
+/* Headers, Sidebars & Root Surfaces */
+html:not(.dark) .seller-dashboard .bg-\[\#0a0a0a\],
+html:not(.dark) .seller-dashboard .bg-\[\#0d0d0d\],
+html:not(.dark) .admin-dashboard .bg-\[\#0f0f0f\] {
+  background-color: #f8fafc !important;
+}
+
+html:not(.dark) .seller-dashboard .bg-\[\#0f0f0f\],
+html:not(.dark) .seller-dashboard .bg-\[\#121212\],
+html:not(.dark) .seller-dashboard .bg-\[\#141414\],
+html:not(.dark) .seller-dashboard .bg-\[\#161616\],
+html:not(.dark) .admin-dashboard .bg-\[\#121212\],
+html:not(.dark) .admin-dashboard .bg-\[\#141414\],
+html:not(.dark) .admin-dashboard .bg-\[\#161616\] {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* Header blurs */
+html:not(.dark) .seller-dashboard .bg-\[\#0f0f0f\]\/95,
+html:not(.dark) .admin-dashboard .bg-\[\#0f0f0f\]\/90,
+html:not(.dark) .seller-dashboard .bg-\[\#161616\]\/95 {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* Cards & Panel Backgrounds */
+html:not(.dark) .seller-dashboard .bg-\[\#111\],
+html:not(.dark) .seller-dashboard .bg-\[\#1a1a1a\],
+html:not(.dark) .seller-dashboard .bg-\[\#181818\],
+html:not(.dark) .seller-dashboard .bg-zinc-900,
+html:not(.dark) .seller-dashboard .bg-zinc-900\/50,
+html:not(.dark) .seller-dashboard .bg-zinc-800,
+html:not(.dark) .admin-dashboard .bg-\[\#111\],
+html:not(.dark) .admin-dashboard .bg-\[\#1a1a1a\],
+html:not(.dark) .admin-dashboard .bg-\[\#181818\],
+html:not(.dark) .admin-dashboard .bg-\[\#222\],
+html:not(.dark) .admin-dashboard .bg-\[\#252525\],
+html:not(.dark) .admin-dashboard .bg-zinc-900,
+html:not(.dark) .admin-dashboard .bg-zinc-800,
+html:not(.dark) .admin-dashboard .admin-stat-card,
+html:not(.dark) .admin-dashboard [style*="background: #1a1a1a"],
+html:not(.dark) .admin-dashboard [style*="background:#1a1a1a"] {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+}
+
+/* Text Colors */
+html:not(.dark) .seller-dashboard .text-white,
+html:not(.dark) .admin-dashboard .text-white {
+  color: #0f172a !important;
+}
+
+html:not(.dark) .seller-dashboard .text-gray-100,
+html:not(.dark) .seller-dashboard .text-gray-200,
+html:not(.dark) .seller-dashboard .text-gray-300,
+html:not(.dark) .seller-dashboard .text-zinc-100,
+html:not(.dark) .seller-dashboard .text-zinc-200,
+html:not(.dark) .seller-dashboard .text-zinc-300,
+html:not(.dark) .admin-dashboard .text-gray-100,
+html:not(.dark) .admin-dashboard .text-gray-200,
+html:not(.dark) .admin-dashboard .text-gray-300,
+html:not(.dark) .admin-dashboard .text-zinc-100,
+html:not(.dark) .admin-dashboard .text-zinc-200,
+html:not(.dark) .admin-dashboard .text-zinc-300 {
+  color: #334155 !important;
+}
+
+html:not(.dark) .seller-dashboard .text-gray-400,
+html:not(.dark) .seller-dashboard .text-gray-500,
+html:not(.dark) .seller-dashboard .text-zinc-400,
+html:not(.dark) .seller-dashboard .text-zinc-500,
+html:not(.dark) .admin-dashboard .text-gray-400,
+html:not(.dark) .admin-dashboard .text-gray-500,
+html:not(.dark) .admin-dashboard .text-zinc-400,
+html:not(.dark) .admin-dashboard .text-zinc-500 {
+  color: #64748b !important;
+}
+
+/* Form Inputs, Selects & Textareas */
+html:not(.dark) .seller-dashboard input:not([type="checkbox"]):not([type="radio"]),
+html:not(.dark) .seller-dashboard select,
+html:not(.dark) .seller-dashboard textarea,
+html:not(.dark) .admin-dashboard input:not([type="checkbox"]):not([type="radio"]),
+html:not(.dark) .admin-dashboard select,
+html:not(.dark) .admin-dashboard textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+html:not(.dark) .seller-dashboard input::placeholder,
+html:not(.dark) .seller-dashboard textarea::placeholder,
+html:not(.dark) .admin-dashboard input::placeholder,
+html:not(.dark) .admin-dashboard textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* Borders */
+html:not(.dark) .seller-dashboard .border-zinc-800,
+html:not(.dark) .seller-dashboard .border-zinc-700,
+html:not(.dark) .seller-dashboard .border-\[\#262626\],
+html:not(.dark) .admin-dashboard .border-zinc-800,
+html:not(.dark) .admin-dashboard .border-zinc-700,
+html:not(.dark) .admin-dashboard .border-\[\#1f1f1f\],
+html:not(.dark) .admin-dashboard .border-\[\#252525\],
+html:not(.dark) .admin-dashboard .border-\[\#333\],
+html:not(.dark) .admin-dashboard .divide-\[\#222\] > * + *,
+html:not(.dark) .admin-dashboard .divide-\[\#252525\] > * + * {
+  border-color: #e2e8f0 !important;
+}
+
+/* Hover States */
+html:not(.dark) .seller-dashboard .hover\:bg-zinc-800:hover,
+html:not(.dark) .seller-dashboard .hover\:bg-zinc-900:hover,
+html:not(.dark) .seller-dashboard .hover\:bg-\[\#1a1a1a\]:hover,
+html:not(.dark) .admin-dashboard .hover\:bg-\[\#1a1a1a\]:hover,
+html:not(.dark) .admin-dashboard .hover\:bg-\[\#222\]:hover,
+html:not(.dark) .admin-dashboard .hover\:bg-\[\#303030\]:hover {
+  background-color: #f1f5f9 !important;
+}
+
+/* Navigation items active/inactive */
+html:not(.dark) .admin-dashboard .bg-\[\#222\] {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+}
+
+/* Theme Toggle Buttons & Language Pills */
+html:not(.dark) .seller-dashboard button[aria-label="Toggle Dark/Light Mode"],
+html:not(.dark) .admin-dashboard button[aria-label="Toggle Dark/Light Mode"] {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #334155 !important;
+}
+
+html:not(.dark) .seller-dashboard .bg-zinc-800.rounded-full,
+html:not(.dark) .seller-dashboard .bg-zinc-900.rounded-full {
+  background-color: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+}
+
+/* Badges: Success, Warning, Danger */
+html:not(.dark) .seller-dashboard .bg-emerald-950\/60,
+html:not(.dark) .admin-dashboard .bg-emerald-950\/60,
+html:not(.dark) .admin-dashboard .bg-emerald-950\/40 {
+  background-color: #dcfce7 !important;
+  color: #166534 !important;
+  border-color: #86efac !important;
+}
+
+html:not(.dark) .seller-dashboard .bg-amber-950\/60,
+html:not(.dark) .admin-dashboard .bg-amber-950\/60,
+html:not(.dark) .admin-dashboard .bg-amber-950\/40,
+html:not(.dark) .seller-dashboard .bg-amber-950\/40 {
+  background-color: #fef3c7 !important;
+  color: #92400e !important;
+  border-color: #fcd34d !important;
+}
+
+html:not(.dark) .seller-dashboard .bg-red-950\/40,
+html:not(.dark) .admin-dashboard .bg-red-950\/40,
+html:not(.dark) .admin-dashboard .bg-red-950\/60,
+html:not(.dark) .admin-dashboard .bg-red-950\/20 {
+  background-color: #fee2e2 !important;
+  color: #991b1b !important;
+  border-color: #fca5a5 !important;
+}
+

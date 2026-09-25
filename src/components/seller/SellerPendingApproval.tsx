@@ -17,8 +17,11 @@ import {
   Sparkles,
   ArrowRight,
   ExternalLink,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { useTranslation } from "@/hooks/useTranslation";
+import { useTheme } from "@/context/ThemeContext";
 import Link from "next/link";
 
 interface SellerPendingApprovalProps {
@@ -35,6 +38,7 @@ interface SellerPendingApprovalProps {
 export default function SellerPendingApproval({ user }: SellerPendingApprovalProps) {
   const router = useRouter();
   const { isHindi } = useTranslation();
+  const { theme, toggleTheme, isDark } = useTheme();
   const [checking, setChecking] = useState(false);
 
   const checkApprovalStatus = async () => {
@@ -78,7 +82,7 @@ export default function SellerPendingApproval({ user }: SellerPendingApprovalPro
   const isSuspended = user.status === "suspended";
 
   return (
-    <div className="min-h-screen bg-[#0d0d0d] text-zinc-100 flex flex-col justify-between p-4 sm:p-6 md:p-8 relative overflow-hidden font-sans">
+    <div className="seller-dashboard min-h-screen bg-[#0d0d0d] text-zinc-100 flex flex-col justify-between p-4 sm:p-6 md:p-8 relative overflow-hidden font-sans">
       {/* Background glow effects */}
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[500px] h-[500px] bg-[#c8a96e]/10 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute top-10 right-10 w-72 h-72 bg-amber-500/5 rounded-full blur-2xl pointer-events-none" />
@@ -91,13 +95,37 @@ export default function SellerPendingApproval({ user }: SellerPendingApprovalPro
             Goat<span className="text-[#c8a96e]">Mart</span>
           </span>
         </Link>
-        <button
-          onClick={() => signOut({ callbackUrl: "/login" })}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-400 hover:text-white text-xs font-semibold transition-colors"
-        >
-          <LogOut size={13} />
-          <span>{isHindi ? "लॉगआउट" : "Sign Out"}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Theme Toggle */}
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="w-8 h-8 rounded-full border border-zinc-700 bg-zinc-800 flex items-center justify-center text-zinc-300 hover:text-white transition-all shadow-xs"
+            title={
+              isDark
+                ? isHindi
+                  ? "लाइट मोड पर स्विच करें"
+                  : "Switch to Light Mode"
+                : isHindi
+                ? "डार्क मोड पर स्विच करें"
+                : "Switch to Dark Mode"
+            }
+            aria-label="Toggle Dark/Light Mode"
+          >
+            {isDark ? (
+              <Sun size={14} className="text-amber-400" />
+            ) : (
+              <Moon size={14} className="text-zinc-400" />
+            )}
+          </button>
+          <button
+            onClick={() => signOut({ callbackUrl: "/login" })}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border border-zinc-800 bg-zinc-900/80 hover:bg-zinc-800 text-zinc-400 hover:text-white text-xs font-semibold transition-colors"
+          >
+            <LogOut size={13} />
+            <span>{isHindi ? "लॉगआउट" : "Sign Out"}</span>
+          </button>
+        </div>
       </header>
 
       {/* Main Content Card */}
