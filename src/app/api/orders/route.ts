@@ -82,8 +82,8 @@ export async function POST(req: NextRequest) {
       return badRequestResponse("You cannot purchase your own goat listing");
     }
 
-    // Verify goat is currently available for purchase (status must be 'sale')
-    if (goat.status !== "sale") {
+    // Verify goat is currently available for purchase (status must not be 'sold')
+    if (goat.status === "sold") {
       return badRequestResponse("This goat has already been sold");
     }
 
