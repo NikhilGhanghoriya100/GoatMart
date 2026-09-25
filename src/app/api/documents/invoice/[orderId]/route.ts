@@ -31,22 +31,35 @@ export async function GET(
       return unauthorizedResponse("Authentication required to view order invoice");
     }
 
-    const { orderId } = await context.params;
-    if (!orderId) {
+    const rawOrderId = (await context.params)?.orderId;
+    if (!rawOrderId) {
       return notFoundResponse("Order ID is required");
+    }
+
+    let decodedOrderId = rawOrderId;
+    try {
+      decodedOrderId = decodeURIComponent(rawOrderId).trim();
+    } catch {
+      decodedOrderId = rawOrderId.trim();
     }
 
     await connectDB();
 
-    // Query order by MongoDB _id if valid ObjectId, or by public orderId string (e.g., #BKR-1234)
-    let orderQuery: any = { orderId };
-    if (mongoose.Types.ObjectId.isValid(orderId)) {
-      orderQuery = {
-        $or: [{ _id: orderId }, { orderId }],
-      };
+    // Query order by MongoDB _id if valid ObjectId, or by public orderId string (e.g., #BKR-1234 or BKR-1234)
+    const withHash = decodedOrderId.startsWith("#") ? decodedOrderId : `#${decodedOrderId}`;
+    const withoutHash = decodedOrderId.replace(/^#+/, "");
+
+    const queryOr: any[] = [
+      { orderId: decodedOrderId },
+      { orderId: withHash },
+      { orderId: withoutHash },
+    ];
+
+    if (mongoose.Types.ObjectId.isValid(decodedOrderId)) {
+      queryOr.push({ _id: decodedOrderId });
     }
 
-    const order = await Order.findOne(orderQuery).lean();
+    const order = await Order.findOne({ $or: queryOr }).lean();
     if (!order) {
       return notFoundResponse("Order record not found");
     }

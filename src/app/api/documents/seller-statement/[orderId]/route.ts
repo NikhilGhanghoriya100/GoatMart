@@ -31,21 +31,34 @@ export async function GET(
       return unauthorizedResponse("Authentication required to view seller settlement statement");
     }
 
-    const { orderId } = await context.params;
-    if (!orderId) {
+    const rawOrderId = (await context.params)?.orderId;
+    if (!rawOrderId) {
       return notFoundResponse("Order ID is required");
+    }
+
+    let decodedOrderId = rawOrderId;
+    try {
+      decodedOrderId = decodeURIComponent(rawOrderId).trim();
+    } catch {
+      decodedOrderId = rawOrderId.trim();
     }
 
     await connectDB();
 
-    let orderQuery: any = { orderId };
-    if (mongoose.Types.ObjectId.isValid(orderId)) {
-      orderQuery = {
-        $or: [{ _id: orderId }, { orderId }],
-      };
+    const withHash = decodedOrderId.startsWith("#") ? decodedOrderId : `#${decodedOrderId}`;
+    const withoutHash = decodedOrderId.replace(/^#+/, "");
+
+    const queryOr: any[] = [
+      { orderId: decodedOrderId },
+      { orderId: withHash },
+      { orderId: withoutHash },
+    ];
+
+    if (mongoose.Types.ObjectId.isValid(decodedOrderId)) {
+      queryOr.push({ _id: decodedOrderId });
     }
 
-    const order = await Order.findOne(orderQuery).lean();
+    const order = await Order.findOne({ $or: queryOr }).lean();
     if (!order) {
       return notFoundResponse("Order record not found");
     }

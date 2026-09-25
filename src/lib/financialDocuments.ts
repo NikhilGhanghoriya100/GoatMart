@@ -54,6 +54,8 @@ export interface InvoiceDocumentData {
     basePrice: number;
     platformFeeIncluded: boolean;
     deliveryFee: number;
+    buyerPlatformFee?: number;
+    buyerPlatformFeeRate?: number;
     totalAmountPaid: number;
     currency: string;
     calculationVersion: string;
@@ -323,8 +325,26 @@ export function generateOrderInvoiceData(
     typeof actualOrder.sellerBasePrice === "number" ? actualOrder.sellerBasePrice : Number(actualOrder.amount) || 0;
   const deliveryFee =
     typeof actualOrder.deliveryCharge === "number" ? actualOrder.deliveryCharge : 0;
+
+  // Authoritative buyer platform fee from stored order snapshot (do not recalculate if stored)
+  const storedBuyerPlatformFee =
+    typeof actualOrder.buyerPlatformFee === "number" ? actualOrder.buyerPlatformFee : undefined;
+  const storedBuyerFeeRate =
+    typeof actualOrder.buyerPlatformFeeRate === "number" ? actualOrder.buyerPlatformFeeRate : 2.0;
+
+  // Safe backwards-compatible fallback for legacy orders without stored buyerPlatformFee:
+  // Only detect a fee if total amount strictly exceeds basePrice + deliveryFee
+  const buyerPlatformFee =
+    storedBuyerPlatformFee !== undefined
+      ? storedBuyerPlatformFee
+      : (typeof actualOrder.amount === "number" && actualOrder.amount > basePrice + deliveryFee)
+      ? actualOrder.amount - (basePrice + deliveryFee)
+      : undefined;
+
   const totalPaid =
-    typeof actualOrder.amount === "number" ? actualOrder.amount : basePrice + deliveryFee;
+    typeof actualOrder.amount === "number"
+      ? actualOrder.amount
+      : basePrice + deliveryFee + (buyerPlatformFee || 0);
 
   const invoiceDate = formatDate(actualOrder.payment?.paidAt || actualOrder.createdAt);
   const orderDate = formatDate(actualOrder.createdAt);
@@ -364,8 +384,10 @@ export function generateOrderInvoiceData(
     },
     financials: {
       basePrice,
-      platformFeeIncluded: true,
+      platformFeeIncluded: !buyerPlatformFee || buyerPlatformFee <= 0,
       deliveryFee,
+      buyerPlatformFee: buyerPlatformFee && buyerPlatformFee > 0 ? buyerPlatformFee : undefined,
+      buyerPlatformFeeRate: buyerPlatformFee && buyerPlatformFee > 0 ? storedBuyerFeeRate : undefined,
       totalAmountPaid: totalPaid,
       currency: order.currency || "INR",
       calculationVersion: order.financialCalculationVersion || "2.0",
@@ -1003,15 +1025,22 @@ export function renderInvoiceHtml(data: InvoiceDocumentData): string {
             <span>${formatCurrencyINR(data.financials.basePrice)}</span>
           </div>
           <div class="summary-row">
-            <span>Platform Service Fee / प्लेटफ़ॉर्म सेवा शुल्क:</span>
-            <span style="color: #16a34a; font-weight: 600;">Included / सम्मिलित</span>
-          </div>
-          <div class="summary-row">
             <span>Delivery & Transit / डिलीवरी शुल्क:</span>
             <span>${data.financials.deliveryFee > 0 ? formatCurrencyINR(data.financials.deliveryFee) : "₹0 (Free Delivery / मुफ़्त)"}</span>
           </div>
+          ${
+            typeof data.financials.buyerPlatformFee === "number" && data.financials.buyerPlatformFee > 0
+              ? `<div class="summary-row">
+            <span>Buyer Platform Fee (${data.financials.buyerPlatformFeeRate ?? 2}% of Goat Price) / खरीदार प्लेटफ़ॉर्म शुल्क (2%):</span>
+            <span style="font-weight: 600;">${formatCurrencyINR(data.financials.buyerPlatformFee)}</span>
+          </div>`
+              : `<div class="summary-row">
+            <span>Platform Service Fee / प्लेटफ़ॉर्म सेवा शुल्क:</span>
+            <span style="color: #16a34a; font-weight: 600;">Included / सम्मिलित</span>
+          </div>`
+          }
           <div class="summary-row summary-total">
-            <span>Total Paid / कुल भुगतान राशि:</span>
+            <span>Total Customer Payment / कुल भुगतान राशि:</span>
             <span class="total-highlight">${formatCurrencyINR(data.financials.totalAmountPaid)}</span>
           </div>
         </div>

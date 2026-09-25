@@ -1674,6 +1674,7 @@ export default function SellerDashboard() {
       currency: string;
     };
     sales: Array<{
+      id?: string;
       orderId: string;
       goatId: string;
       goatName: string;
@@ -3761,7 +3762,7 @@ export default function SellerDashboard() {
                           {/* Settlement Statement Button */}
                           <div className="flex items-center">
                             <a
-                              href={`/api/documents/seller-statement/${s.orderId}`}
+                              href={`/api/documents/seller-statement/${s.id || encodeURIComponent(s.orderId)}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="px-3 py-1.5 rounded-xl border border-zinc-700 hover:border-[#c8a96e] text-gray-300 hover:text-white text-xs font-sans transition-colors flex items-center gap-1.5"

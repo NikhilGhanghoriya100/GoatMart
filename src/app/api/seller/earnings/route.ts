@@ -67,6 +67,7 @@ export async function GET(_req: NextRequest) {
       totalNetEarningsPaise += Math.round(netPayable * 100);
 
       return {
+        id: o._id.toString(),
         orderId: o.orderId,
         goatId: o.goat?.toString(),
         goatName: o.goatName || "Goat Listing",

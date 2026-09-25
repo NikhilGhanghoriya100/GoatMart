@@ -193,6 +193,27 @@ function simulateDocumentAuthCheck(params: {
   return { status: 403, allowed: false, error: "Forbidden" };
 }
 
+// Router parameter normalization & order lookup simulator matching seller-statement / invoice routes
+function simulateRouteOrderLookup(rawOrderId: string, storedOrder: any): boolean {
+  if (!rawOrderId) return false;
+  let decoded = rawOrderId;
+  try {
+    decoded = decodeURIComponent(rawOrderId).trim();
+  } catch {
+    decoded = rawOrderId.trim();
+  }
+  const withHash = decoded.startsWith("#") ? decoded : `#${decoded}`;
+  const withoutHash = decoded.replace(/^#+/, "");
+
+  if (mongoose.Types.ObjectId.isValid(decoded) && storedOrder._id.toString() === decoded) {
+    return true;
+  }
+  if (storedOrder.orderId === decoded || storedOrder.orderId === withHash || storedOrder.orderId === withoutHash) {
+    return true;
+  }
+  return false;
+}
+
 async function runTests() {
   const sellerA = createTestSeller();
   const sellerB = createTestSeller();
@@ -349,8 +370,89 @@ async function runTests() {
   assert(payoutHtml.includes("trf_rzp_route_777"), "Test 32b: Razorpay Transfer ID remains untranslated");
   assert(invoiceData.invoiceNumber.startsWith("INV-"), "Test 32c: Invoice number format is preserved");
 
+  // -------------------------------------------------------------------------
+  // SUITE 6: Buyer Platform Fee Itemization & Route Resolution (Tests 33 - 42)
+  // -------------------------------------------------------------------------
+  console.log("\n--- Tests 33-37: Customer Invoice Buyer Platform Fee Itemization & Reconciliation ---");
+  const orderWithBuyerFee = createTestOrder({
+    _id: "6ab682053f1d60b8225d8507",
+    orderId: "#BKR-2401",
+    sellerBasePrice: 20000,
+    deliveryCharge: 3000,
+    buyerPlatformFee: 400,
+    buyerPlatformFeeRate: 2.0,
+    amount: 23400,
+    seller: sellerA._id.toString(),
+    customer: customerA._id.toString(),
+  });
+
+  const invoiceDataWithFee = generateOrderInvoiceData(orderWithBuyerFee, customerA, sellerA);
+  const invoiceHtmlWithFee = renderInvoiceHtml(invoiceDataWithFee);
+
+  // 1. buyerPlatformFee = 400 is preserved from the Order
+  assert(invoiceDataWithFee.financials.buyerPlatformFee === 400, "Test 33: buyerPlatformFee = 400 is preserved from the Order");
+
+  // 2. Invoice HTML contains the buyer platform fee label
+  assert(
+    invoiceHtmlWithFee.includes("Buyer Platform Fee (2% of Goat Price)") &&
+    invoiceHtmlWithFee.includes("खरीदार प्लेटफ़ॉर्म शुल्क (2%)"),
+    "Test 34: Invoice HTML contains the bilingual buyer platform fee label"
+  );
+
+  // 3. Invoice HTML contains ₹400
+  assert(invoiceHtmlWithFee.includes(formatCurrencyINR(400)), "Test 35: Invoice HTML contains formatted ₹400");
+
+  // 4. Invoice calculation visibly reconciles: 20000 + 3000 + 400 = 23400
+  const reconciles =
+    invoiceDataWithFee.financials.basePrice +
+    invoiceDataWithFee.financials.deliveryFee +
+    (invoiceDataWithFee.financials.buyerPlatformFee || 0) ===
+    invoiceDataWithFee.financials.totalAmountPaid;
+  assert(reconciles, "Test 36: Invoice calculation visibly reconciles (20000 + 3000 + 400 = 23400)");
+  assert(
+    invoiceHtmlWithFee.includes(formatCurrencyINR(20000)) &&
+    invoiceHtmlWithFee.includes(formatCurrencyINR(3000)) &&
+    invoiceHtmlWithFee.includes(formatCurrencyINR(400)) &&
+    invoiceHtmlWithFee.includes(formatCurrencyINR(23400)),
+    "Test 36b: All reconciled amounts appear in HTML"
+  );
+
+  // 5. Existing legacy order behavior remains safe
+  const legacyOrderV1 = createTestOrder({
+    orderId: "#BKR-LEGACY-01",
+    sellerBasePrice: 20000,
+    deliveryCharge: 0,
+    amount: 20000,
+    // buyerPlatformFee is undefined
+  });
+  const legacyInvoiceData = generateOrderInvoiceData(legacyOrderV1, customerA, sellerA);
+  const legacyInvoiceHtml = renderInvoiceHtml(legacyInvoiceData);
+  assert(legacyInvoiceData.financials.buyerPlatformFee === undefined, "Test 37a: Legacy order does not invent buyer platform fee");
+  assert(
+    legacyInvoiceHtml.includes("Platform Service Fee / प्लेटफ़ॉर्म सेवा शुल्क:") &&
+    legacyInvoiceHtml.includes("Included / सम्मिलित"),
+    "Test 37b: Legacy order retains backwards-compatible 'Included' label"
+  );
+
+  console.log("\n--- Tests 38-42: Seller Statement Route Resolution & Parameter Normalization ---");
+  // Route resolution for:
+  // - MongoDB _id
+  assert(simulateRouteOrderLookup(orderWithBuyerFee._id.toString(), orderWithBuyerFee), "Test 38: Route resolves order via MongoDB _id");
+  // - #BKR-2401
+  assert(simulateRouteOrderLookup("#BKR-2401", orderWithBuyerFee), "Test 39: Route resolves order via unencoded '#BKR-2401'");
+  // - %23BKR-2401
+  assert(simulateRouteOrderLookup("%23BKR-2401", orderWithBuyerFee), "Test 40: Route resolves order via URL-encoded '%23BKR-2401'");
+  // - BKR-2401
+  assert(simulateRouteOrderLookup("BKR-2401", orderWithBuyerFee), "Test 41: Route resolves order via hashless 'BKR-2401'");
+
+  // Verify existing seller RBAC/ownership tests still pass with orderWithBuyerFee
+  const sellerAuthPass = simulateDocumentAuthCheck({ documentType: "seller_statement", user: sellerA, order: orderWithBuyerFee });
+  assert(sellerAuthPass.status === 200, "Test 42a: Seller A is authorized to view statement for own order");
+  const sellerBAuthForbidden = simulateDocumentAuthCheck({ documentType: "seller_statement", user: sellerB, order: orderWithBuyerFee });
+  assert(sellerBAuthForbidden.status === 403, "Test 42b: Seller B is strictly forbidden from viewing Seller A's statement");
+
   console.log("\n==================================================================");
-  console.log("🎉 ALL 32 STEP 10 FINANCIAL DOCUMENT TESTS PASSED 100% PERFECTLY!");
+  console.log("🎉 ALL 42 FINANCIAL DOCUMENT TESTS PASSED 100% PERFECTLY!");
   console.log("==================================================================\n");
 }
 
