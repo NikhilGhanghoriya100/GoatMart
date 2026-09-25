@@ -97,16 +97,21 @@ export default function OrdersPage() {
     if (!cancelModalOrder) return;
     setCancelling(true);
     try {
-      const { data } = await axios.patch(`/api/orders/${cancelModalOrder._id}`, {
-        status: "cancelled",
+      const { data } = await axios.post(`/api/orders/${cancelModalOrder._id}/cancel`, {
+        reason: cancelReason,
       });
 
       if (data.success) {
-        toast.success(t.orderCancelledToast || (isHindi ? "ऑर्डर सफलतापूर्वक रद्द कर दिया गया।" : "Order cancelled successfully."));
-        // Update state locally
-        setOrders((prev) =>
-          prev.map((o) => (o._id === cancelModalOrder._id ? { ...o, status: "cancelled" } : o))
-        );
+        const isRefunded =
+          data.data?.refundInitiated || data.data?.status === "refunded";
+        const refundMsg = isRefunded
+          ? (isHindi
+              ? `ऑर्डर रद्द कर दिया गया और ₹${data.data?.refundAmount || cancelModalOrder.amount} का रिफंड सफलतापूर्वक प्रोसेस हो गया है।`
+              : `Order cancelled and ₹${data.data?.refundAmount || cancelModalOrder.amount} refund processed successfully.`)
+          : (t.orderCancelledToast || (isHindi ? "ऑर्डर सफलतापूर्वक रद्द कर दिया गया।" : "Order cancelled successfully."));
+
+        toast.success(refundMsg);
+        refetch();
         setCancelModalOrder(null);
       } else {
         toast.error(data.error || (isHindi ? "ऑर्डर रद्द करने में विफल" : "Failed to cancel order"));
@@ -161,6 +166,23 @@ export default function OrdersPage() {
                 {fmt(cancelModalOrder.amount)}
               </div>
             </div>
+
+            {/* Paid Order Refund Notice */}
+            {cancelModalOrder.payment?.status === "paid" && (
+              <div className="flex items-center gap-2.5 p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50 rounded-2xl text-xs text-emerald-800 dark:text-emerald-300 font-sans">
+                <span className="text-base">💰</span>
+                <div>
+                  <span className="font-bold block">
+                    {isHindi ? "रिफंड प्रक्रिया शुरू की जाएगी" : "Refund Initiation"}
+                  </span>
+                  <span className="text-[11px] opacity-90 block mt-0.5">
+                    {isHindi
+                      ? `भुगतान की गई राशि (₹${cancelModalOrder.amount}) का पूर्ण रिफंड Razorpay के माध्यम से शुरू किया जाएगा। रिफंड की स्थिति Razorpay द्वारा पुष्टि के बाद अपडेट की जाएगी।`
+                      : `A full refund of the paid amount (₹${cancelModalOrder.amount}) will be initiated through Razorpay. The refund status will be updated after Razorpay confirmation.`}
+                  </span>
+                </div>
+              </div>
+            )}
 
             {/* Reason selector */}
             <div>
@@ -257,8 +279,24 @@ export default function OrdersPage() {
               </div>
             </div>
 
-            {/* Cancelled Alert Banner */}
-            {trackedOrder.status === "cancelled" ? (
+            {/* Cancelled or Refunded Alert Banner */}
+            {trackedOrder.status === "refunded" ? (
+              <div className="mb-4 p-3 bg-purple-50 dark:bg-purple-950/40 border border-purple-200 dark:border-purple-900/60 rounded-xl text-xs text-purple-700 dark:text-purple-300 font-sans flex items-center gap-2.5">
+                <span className="text-base">💰</span>
+                <div>
+                  <span className="font-bold block">
+                    {isHindi ? "यह ऑर्डर रद्द एवं रिफंड कर दिया गया है" : "This order has been cancelled & refunded"}
+                  </span>
+                  <span className="text-[11px] text-purple-600 dark:text-purple-400 block mt-0.5">
+                    {trackedOrder.refund?.refundId
+                      ? (isHindi
+                          ? `रिफंड राशि ₹${trackedOrder.refund.amount || trackedOrder.amount} जारी (ID: ${trackedOrder.refund.refundId})`
+                          : `Refund of ₹${trackedOrder.refund.amount || trackedOrder.amount} processed (ID: ${trackedOrder.refund.refundId})`)
+                      : (isHindi ? "रिफंड आपके मूल भुगतान खाते में भेज दिया गया है।" : "Refund has been sent to your original payment method.")}
+                  </span>
+                </div>
+              </div>
+            ) : trackedOrder.status === "cancelled" ? (
               <div className="mb-4 p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-xl text-xs text-red-700 dark:text-red-300 font-sans flex items-center gap-2.5">
                 <XCircle size={16} className="text-red-600 shrink-0" />
                 <div>
@@ -322,6 +360,16 @@ export default function OrdersPage() {
                 <MessageSquare size={14} />
                 <span>{t.contactSeller}</span>
               </button>
+              <a
+                href={`/api/documents/invoice/${trackedOrder._id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-zinc-200 text-xs font-bold font-sans flex items-center justify-center gap-1.5 hover:border-[#c8a96e] transition-colors"
+                title={isHindi ? "ऑर्डर इनवॉयस / रसीद देखें" : "View Order Invoice & Receipt"}
+              >
+                <span>📄</span>
+                <span>{isHindi ? "इनवॉयस" : "Invoice"}</span>
+              </a>
               {isEligibleForCancel(trackedOrder.status) && (
                 <button
                   onClick={() => setCancelModalOrder(trackedOrder)}
@@ -424,6 +472,16 @@ export default function OrdersPage() {
                     >
                       <MessageSquare size={12} /> {t.contactSeller}
                     </button>
+                    {/* Invoice button */}
+                    <a
+                      href={`/api/documents/invoice/${order._id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-600 dark:text-zinc-300 text-xs font-sans hover:border-[#c8a96e] transition-colors min-w-[80px]"
+                      title={isHindi ? "ऑर्डर इनवॉयस / रसीद देखें" : "View Order Invoice & Receipt"}
+                    >
+                      <span>📄</span> {isHindi ? "इनवॉयस" : "Invoice"}
+                    </a>
                     {isEligibleForCancel(order.status) && (
                       <button
                         onClick={() => setCancelModalOrder(order)}

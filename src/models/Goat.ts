@@ -32,6 +32,7 @@ export interface IGoat extends Document {
   totalReviews: number;
   views: number;
   wishlistCount: number;
+  currentOrderId?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -44,6 +45,7 @@ const GoatSchema = new Schema<IGoat>(
     age: { type: String, required: true },
     price: { type: Number, required: true },
     status: { type: String, default: "sale" },
+    currentOrderId: { type: Schema.Types.ObjectId, ref: "Order" },
     health: { type: String, default: "Good" },
     vaccinated: { type: Boolean, default: false },
     tag: { type: String },

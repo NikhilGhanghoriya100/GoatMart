@@ -846,12 +846,18 @@ import { useRouter } from "next/navigation";
 import axios from "axios";
 import toast from "react-hot-toast";
 import { fmt } from "@/lib/utils";
+import AdminFinancials from "@/components/admin/AdminFinancials";
+import AdminPayouts from "@/components/admin/AdminPayouts";
+import AdminAuditAndReconciliation from "@/components/admin/AdminAuditAndReconciliation";
 
 const G = "#c8a96e",
   DG = "#8b5e2a";
 
 const TABS = [
   { id: "dashboard", ic: "📊", l: "Dashboard" },
+  { id: "financials", ic: "💰", l: "Financials" },
+  { id: "payouts", ic: "💸", l: "Payouts" },
+  { id: "audit", ic: "📜", l: "Audit & Recon" },
   { id: "goats", ic: "🐐", l: "Goats" },
   { id: "orders", ic: "📦", l: "Orders" },
   { id: "sellers", ic: "🏪", l: "Sellers" },
@@ -860,10 +866,13 @@ const TABS = [
   { id: "analytics", ic: "📈", l: "Analytics" },
 ];
 
-function Stat({ icon, val, lbl, clr }: any) {
+function Stat({ icon, val, lbl, clr, onClick }: any) {
   return (
     <div
-      className="rounded-2xl p-4 border relative overflow-hidden"
+      onClick={onClick}
+      className={`rounded-2xl p-4 border relative overflow-hidden ${
+        onClick ? "cursor-pointer hover:border-[#c8a96e]/50 transition-colors" : ""
+      }`}
       style={{
         background: "#1a1a1a",
         borderColor: "#252525",
@@ -1208,6 +1217,7 @@ export default function AdminDashboard() {
                       val={stats ? fmt(stats.totalRevenue) : "₹0"}
                       lbl="Total Revenue"
                       clr={G}
+                      onClick={() => setTab("financials")}
                     />
 
                     <Stat
@@ -1357,6 +1367,15 @@ export default function AdminDashboard() {
                   </div>
                 </div>
               )}
+
+              {/* FINANCIALS TAB */}
+              {tab === "financials" && <AdminFinancials />}
+
+              {/* PAYOUTS TAB */}
+              {tab === "payouts" && <AdminPayouts />}
+
+              {/* AUDIT & RECONCILIATION TAB */}
+              {tab === "audit" && <AdminAuditAndReconciliation />}
 
               {/* GOATS TAB */}
               {tab === "goats" && (

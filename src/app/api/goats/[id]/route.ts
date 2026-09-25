@@ -77,8 +77,10 @@ export async function PATCH(
       return notFoundResponse("Goat not found");
     }
 
-    // Ownership Authorization: Only the goat's seller, any authenticated seller or admin can edit
-    if (goat.seller && goat.seller.toString() !== user.id && user.role !== "admin" && user.role !== "seller") {
+    // Ownership Authorization: Only the listing's seller or an admin can edit
+    const isOwner = goat.seller && goat.seller.toString() === user.id;
+    const isAdmin = user.role === "admin";
+    if (!isAdmin && !isOwner) {
       return forbiddenResponse("You are not authorized to edit this listing");
     }
 
@@ -132,8 +134,10 @@ export async function DELETE(
       return NextResponse.json({ success: true, message: "Listing deleted successfully" });
     }
 
-    // Ownership Authorization: Allowed for admin, seller, or owner
-    if (goat.seller && goat.seller.toString() !== user.id && user.role !== "admin" && user.role !== "seller") {
+    // Ownership Authorization: Only the listing's seller or an admin can delete
+    const isOwner = goat.seller && goat.seller.toString() === user.id;
+    const isAdmin = user.role === "admin";
+    if (!isAdmin && !isOwner) {
       return forbiddenResponse("You are not authorized to delete this listing");
     }
 

@@ -1579,6 +1579,7 @@ import { fmt } from "@/lib/utils";
 import { BREEDS } from "@/types";
 import { useTranslation } from "@/hooks/useTranslation";
 import SellerPendingApproval from "@/components/seller/SellerPendingApproval";
+import { calculateListingFeeEstimate, formatCurrencyINR } from "@/lib/commission";
 import {
   Package,
   MessageSquare,
@@ -1654,9 +1655,56 @@ export default function SellerDashboard() {
     { id: "orders", ic: "📦", l: isHindi ? "ऑर्डर्स" : "Orders" },
     { id: "chats", ic: "💬", l: isHindi ? "पूछताछ" : "Inquiries" },
     { id: "analytics", ic: "📈", l: isHindi ? "एनालिटिक्स" : "Analytics" },
-    { id: "earnings", ic: "💰", l: isHindi ? "कमाई और बैंक" : "Earnings & Payouts" },
+    { id: "earnings", ic: "💰", l: isHindi ? "कमाई" : "Earnings" },
     { id: "profile", ic: "👤", l: isHindi ? "फार्म प्रोफाइल" : "Farm Profile" },
   ];
+
+  const [earningsData, setEarningsData] = useState<{
+    summary: {
+      totalSales: number;
+      totalCommission: number;
+      totalNetEarnings: number;
+      completedSalesCount: number;
+      currency: string;
+    };
+    sales: Array<{
+      orderId: string;
+      goatId: string;
+      goatName: string;
+      goatBreed: string;
+      goatImage: string;
+      saleDate: string | Date;
+      sellerBasePrice: number;
+      commissionRate: number;
+      commissionAmount: number;
+      sellerNetPayable: number;
+      currency: string;
+      paymentId: string;
+      orderStatus: string;
+    }>;
+  } | null>(null);
+  const [earningsLoading, setEarningsLoading] = useState(false);
+  const [earningsError, setEarningsError] = useState<string | null>(null);
+
+  const fetchEarnings = () => {
+    setEarningsLoading(true);
+    setEarningsError(null);
+    axios
+      .get("/api/seller/earnings")
+      .then((res) => {
+        if (res.data?.success && res.data.data) {
+          setEarningsData(res.data.data);
+        }
+      })
+      .catch((err) => {
+        console.error("Seller earnings load err:", err);
+        setEarningsError(
+          err?.response?.data?.error ||
+            (isHindi ? "कमाई विवरण लोड करने में असमर्थ" : "Failed to load seller earnings")
+        );
+      })
+      .finally(() => setEarningsLoading(false));
+  };
 
   const [farmProfile, setFarmProfile] = useState({
     farmName: "",
@@ -1679,6 +1727,7 @@ export default function SellerDashboard() {
   const [editModal, setEditModal] = useState(false);
   const [selectedGoatId, setSelectedGoatId] = useState<string | null>(null);
   const [formData, setFormData] = useState(EMPTY_GOAT);
+  const listingEstimate = calculateListingFeeEstimate(formData.price);
   const [uploadingImg, setUploadingImg] = useState(false);
   const [uploadingVid, setUploadingVid] = useState(false);
   const [savingGoat, setSavingGoat] = useState(false);
@@ -1772,6 +1821,7 @@ export default function SellerDashboard() {
 
   useEffect(() => {
     fetchDashboardData();
+    fetchEarnings();
   }, [session]);
 
   const toggleStatus = async (id: string, current: string) => {
@@ -2714,8 +2764,8 @@ export default function SellerDashboard() {
                         className="text-emerald-400"
                       />
                       {isHindi
-                        ? "बैंक और भुगतान विवरण"
-                        : "View Bank & Payouts"}
+                        ? "विक्रेता शुद्ध कमाई विवरण"
+                        : "View Seller Earnings"}
                     </button>
                   </div>
                 </div>
@@ -3312,157 +3362,221 @@ export default function SellerDashboard() {
 
           {/* ================= EARNINGS ================= */}
           {tab === "earnings" && (
-            <div className="space-y-5 sm:space-y-6 max-w-2xl">
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-
-                <div className="rounded-2xl border border-zinc-800 bg-[#141414] p-5 sm:p-6">
-                  <div className="text-xs text-gray-400 font-sans mb-1 uppercase font-bold">
+            <div className="space-y-6">
+              {/* Header banner */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-zinc-800">
+                <div>
+                  <h2 className="text-xl sm:text-2xl font-bold text-white font-serif flex items-center gap-2.5">
+                    <DollarSign size={22} className="text-[#c8a96e]" />
+                    <span>{isHindi ? "विक्रेता शुद्ध कमाई (Seller Net Earnings)" : "Seller Net Earnings"}</span>
+                  </h2>
+                  <p className="text-xs text-gray-400 font-sans mt-1">
                     {isHindi
-                      ? "कुल प्राप्त कमाई"
-                      : "Realized Revenue"}
-                  </div>
-
-                  <div className="text-2xl sm:text-3xl font-bold text-[#c8a96e] font-serif">
-                    {fmt(totalRevenue)}
-                  </div>
-
-                  <p className="text-[11px] text-gray-500 font-sans mt-2">
-                    {isHindi
-                      ? "सभी भुगतान पूर्णतः सुरक्षित"
-                      : "All funds backed by Razorpay Escrow"}
+                      ? "GoatMart 2% पारदर्शी कमीशन कटौती के बाद आपकी कुल सत्यापित बिक्री और शुद्ध प्राप्य आय।"
+                      : "Authoritative financial breakdown of completed sales after GoatMart's transparent 2% commission."}
                   </p>
                 </div>
 
-                <div className="rounded-2xl border border-zinc-800 bg-[#141414] p-5 sm:p-6">
-                  <div className="text-xs text-gray-400 font-sans mb-1 uppercase font-bold">
-                    {isHindi
-                      ? "डिलीवर हुए ऑर्डर्स"
-                      : "Delivered Orders"}
-                  </div>
+                <button
+                  onClick={fetchEarnings}
+                  disabled={earningsLoading}
+                  className="self-start sm:self-auto px-3.5 py-1.5 rounded-xl border border-zinc-700 bg-zinc-900 text-gray-300 font-sans text-xs hover:border-[#c8a96e] hover:text-[#c8a96e] transition-colors flex items-center gap-1.5 shadow-xs"
+                >
+                  <RefreshCw size={13} className={earningsLoading ? "animate-spin text-[#c8a96e]" : ""} />
+                  <span>{isHindi ? "रिफ्रेश करें" : "Refresh"}</span>
+                </button>
+              </div>
 
-                  <div className="text-2xl sm:text-3xl font-bold text-emerald-400 font-serif">
-                    {
-                      orders.filter(
-                        (o) =>
-                          o.status ===
-                          "delivered"
-                      ).length
-                    }
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4">
+                {/* 1. Total Sales */}
+                <div className="rounded-2xl border border-zinc-800 bg-[#141414] p-5 relative overflow-hidden flex flex-col justify-between hover:border-zinc-700 transition-colors">
+                  <div className="text-xs uppercase font-sans font-bold text-gray-400 mb-1">
+                    {isHindi ? "कुल सकल बिक्री" : "Total Sales"}
                   </div>
-
-                  <p className="text-[11px] text-gray-500 font-sans mt-2">
+                  <div className="text-2xl sm:text-3xl font-bold text-white font-serif my-1">
+                    {earningsLoading && !earningsData
+                      ? "..."
+                      : formatCurrencyINR(earningsData?.summary.totalSales || 0)}
+                  </div>
+                  <div className="text-[11px] text-gray-500 font-sans mt-1">
                     {isHindi
-                      ? "तत्काल बैंक ट्रांसफर"
-                      : "Payouts cleared instantly"}
-                  </p>
+                      ? `${earningsData?.summary.completedSalesCount || 0} बकरियां बिकीं`
+                      : `${earningsData?.summary.completedSalesCount || 0} completed orders`}
+                  </div>
+                </div>
+
+                {/* 2. Platform Commission */}
+                <div className="rounded-2xl border border-zinc-800 bg-[#141414] p-5 relative overflow-hidden flex flex-col justify-between hover:border-zinc-700 transition-colors">
+                  <div className="text-xs uppercase font-sans font-bold text-gray-400 mb-1">
+                    {isHindi ? "GoatMart कमीशन (2%)" : "GoatMart Fee (2%)"}
+                  </div>
+                  <div className="text-2xl sm:text-3xl font-bold text-amber-400/90 font-serif my-1">
+                    {earningsLoading && !earningsData
+                      ? "..."
+                      : `- ${formatCurrencyINR(earningsData?.summary.totalCommission || 0)}`}
+                  </div>
+                  <div className="text-[11px] text-gray-500 font-sans mt-1">
+                    {isHindi ? "2% पारदर्शी प्लेटफॉर्म शुल्क" : "2% transparent platform fee"}
+                  </div>
+                </div>
+
+                {/* 3. Seller Net Earnings */}
+                <div className="rounded-2xl border border-[#c8a96e]/40 bg-gradient-to-br from-[#1a1712] to-[#141414] p-5 relative overflow-hidden flex flex-col justify-between shadow-sm">
+                  <div className="text-xs uppercase font-sans font-bold text-[#c8a96e] mb-1">
+                    {isHindi ? "विक्रेता शुद्ध कमाई" : "Seller Net Earnings"}
+                  </div>
+                  <div className="text-2xl sm:text-3xl font-bold text-[#c8a96e] font-serif my-1">
+                    {earningsLoading && !earningsData
+                      ? "..."
+                      : formatCurrencyINR(earningsData?.summary.totalNetEarnings || 0)}
+                  </div>
+                  <div className="text-[11px] text-emerald-400 font-sans font-medium mt-1">
+                    {isHindi ? "✓ 100% सत्यापित शुद्ध प्राप्य" : "✓ Verified Net Payable"}
+                  </div>
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-zinc-800 bg-[#141414] p-4 sm:p-6 space-y-4">
-
-                <h3 className="font-bold text-base text-white font-serif flex items-center gap-2">
-                  <DollarSign
-                    size={18}
-                    className="text-emerald-400"
-                  />
-                  {isHindi
-                    ? "सीधा बैंक और यूपीआई भुगतान"
-                    : "Direct Bank & UPI Settlement"}
-                </h3>
-
-                <p className="text-xs text-gray-400 font-sans leading-relaxed">
-                  {isHindi
-                    ? "डिलीवरी की पुष्टि होने पर आपकी बिक्री राशि सीधे आपके बैंक खाते या UPI ID में स्थानांतरित की जाती है।"
-                    : "Payouts for confirmed goat deliveries are transferred directly to your bank account or UPI ID."}
-                </p>
-
-                <div className="space-y-3 pt-2">
-
-                  <div>
-                    <label className="text-xs text-gray-300 font-sans mb-1 block font-bold">
-                      {isHindi
-                        ? "UPI ID (सबसे तेज़)"
-                        : "UPI ID (Fastest)"}
-                    </label>
-
-                    <input
-                      placeholder="e.g. yourname@okaxis / yourname@upi"
-                      value={farmProfile.upiId}
-                      onChange={(e) =>
-                        setFarmProfile((p) => ({
-                          ...p,
-                          upiId: e.target.value,
-                        }))
-                      }
-                      className={inp}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-
-                    <div>
-                      <label className="text-xs text-gray-300 font-sans mb-1 block font-bold">
-                        {isHindi
-                          ? "बैंक खाता संख्या"
-                          : "Bank Account Number"}
-                      </label>
-
-                      <input
-                        placeholder="e.g. 501004928123"
-                        value={
-                          farmProfile.bankAccount
-                        }
-                        onChange={(e) =>
-                          setFarmProfile((p) => ({
-                            ...p,
-                            bankAccount:
-                              e.target.value,
-                          }))
-                        }
-                        className={inp}
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-xs text-gray-300 font-sans mb-1 block font-bold">
-                        {isHindi
-                          ? "IFSC कोड"
-                          : "IFSC Code"}
-                      </label>
-
-                      <input
-                        placeholder="e.g. HDFC0001234"
-                        value={
-                          farmProfile.ifscCode
-                        }
-                        onChange={(e) =>
-                          setFarmProfile((p) => ({
-                            ...p,
-                            ifscCode:
-                              e.target.value.toUpperCase(),
-                          }))
-                        }
-                        className={inp}
-                      />
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() =>
-                      toast.success(
-                        isHindi
-                          ? "भुगतान विवरण सत्यापित और सहेज लिया गया!"
-                          : "Payout details verified and saved for auto-settlement!"
-                      )
-                    }
-                    className="w-full py-3 rounded-xl bg-[#c8a96e] text-zinc-950 font-bold font-sans text-xs hover:opacity-90 transition-opacity mt-2 shadow"
-                  >
-                    {isHindi
-                      ? "भुगतान विवरण सहेजें"
-                      : "Save Settlement Details"}
-                  </button>
+              {/* Completed Sales Breakdown Table / Card */}
+              <div className="rounded-2xl border border-zinc-800 bg-[#141414] overflow-hidden">
+                <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
+                  <h3 className="font-bold text-sm sm:text-base text-white font-serif flex items-center gap-2">
+                    <span>{isHindi ? "पूर्ण बिक्री और शुद्ध विवरण" : "Completed Sales Breakdown"}</span>
+                  </h3>
+                  <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-zinc-800 text-gray-300 font-sans font-medium">
+                    {earningsData?.sales.length || 0} {isHindi ? "बिक्री" : "sales"}
+                  </span>
                 </div>
+
+                {/* Loading state */}
+                {earningsLoading && !earningsData && (
+                  <div className="p-8 text-center text-gray-400 font-sans text-xs">
+                    <RefreshCw size={24} className="animate-spin text-[#c8a96e] mx-auto mb-2" />
+                    <p>{isHindi ? "कमाई विवरण लोड हो रहा है..." : "Loading earnings records..."}</p>
+                  </div>
+                )}
+
+                {/* Error state */}
+                {earningsError && (
+                  <div className="p-6 text-center space-y-2">
+                    <p className="text-red-400 text-xs font-sans">{earningsError}</p>
+                    <button
+                      onClick={fetchEarnings}
+                      className="px-4 py-1.5 rounded-full border border-red-800 bg-red-950/40 text-red-200 text-xs font-sans"
+                    >
+                      {isHindi ? "पुनः प्रयास करें" : "Retry"}
+                    </button>
+                  </div>
+                )}
+
+                {/* Empty state */}
+                {!earningsLoading && (!earningsData || earningsData.sales.length === 0) && (
+                  <div className="p-10 text-center space-y-2">
+                    <div className="text-4xl mb-2">🐐</div>
+                    <h4 className="text-base font-bold text-white font-serif">
+                      {isHindi ? "अभी तक कोई पूर्ण बिक्री नहीं हुई है" : "No completed sales recorded yet"}
+                    </h4>
+                    <p className="text-xs text-gray-400 font-sans max-w-md mx-auto leading-relaxed">
+                      {isHindi
+                        ? "जब कोई खरीदार आपकी बकरी के लिए ऑनलाइन भुगतान पूरा करता है, तो उसका 2% कमीशन और आपकी शुद्ध कमाई यहां स्वतः दिखाई देगी।"
+                        : "When a buyer completes checkout payment for your listed goat, the authoritative 2% commission breakdown and your net earnings will appear here."}
+                    </p>
+                  </div>
+                )}
+
+                {/* Sales list */}
+                {earningsData && earningsData.sales.length > 0 && (
+                  <div className="divide-y divide-zinc-800/60">
+                    {earningsData.sales.map((s) => (
+                      <div
+                        key={s.orderId}
+                        className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-zinc-900/30 transition-colors"
+                      >
+                        {/* Goat info */}
+                        <div className="flex items-center gap-3.5 min-w-0">
+                          {s.goatImage ? (
+                            <img
+                              src={s.goatImage}
+                              alt={s.goatName}
+                              className="w-12 h-12 rounded-xl object-cover border border-zinc-800 flex-shrink-0"
+                              onError={(e) => {
+                                (e.target as HTMLImageElement).src =
+                                  "https://images.unsplash.com/photo-1524024973431-2ad916746881?w=800&q=80";
+                              }}
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-xl bg-zinc-800 flex items-center justify-center text-xl flex-shrink-0">
+                              🐐
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-white text-sm font-serif truncate">{s.goatName}</span>
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-zinc-800 text-gray-300 font-sans">
+                                {translateBreed(s.goatBreed)}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-gray-400 font-sans mt-0.5">
+                              <span className="font-mono text-gray-300 font-bold">{s.orderId}</span> •{" "}
+                              {new Date(s.saleDate).toLocaleDateString("en-IN", {
+                                day: "numeric",
+                                month: "short",
+                                year: "numeric",
+                              })}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Financial metrics */}
+                        <div className="flex items-center gap-3 sm:gap-6 flex-wrap justify-between md:justify-end border-t md:border-t-0 pt-3 md:pt-0 border-zinc-800/80">
+                          {/* Base price */}
+                          <div className="text-left md:text-right">
+                            <div className="text-[10px] uppercase font-sans text-gray-400 font-semibold">
+                              {isHindi ? "बिक्री मूल्य (Base)" : "Sale Price"}
+                            </div>
+                            <div className="text-sm font-bold text-gray-200 font-sans">
+                              {formatCurrencyINR(s.sellerBasePrice)}
+                            </div>
+                          </div>
+
+                          {/* Commission */}
+                          <div className="text-left md:text-right">
+                            <div className="text-[10px] uppercase font-sans text-amber-400/90 font-semibold">
+                              {isHindi ? `कमीशन (${s.commissionRate}%)` : `Fee (${s.commissionRate}%)`}
+                            </div>
+                            <div className="text-sm font-bold text-amber-400/90 font-sans">
+                              - {formatCurrencyINR(s.commissionAmount)}
+                            </div>
+                          </div>
+
+                          {/* Net earnings */}
+                          <div className="text-left md:text-right bg-emerald-950/30 border border-emerald-800/40 px-3 py-1.5 rounded-xl">
+                            <div className="text-[10px] uppercase font-sans text-emerald-400 font-bold">
+                              {isHindi ? "आपकी कमाई (Net)" : "Your Earnings"}
+                            </div>
+                            <div className="text-base font-bold text-[#c8a96e] font-serif">
+                              {formatCurrencyINR(s.sellerNetPayable)}
+                            </div>
+                          </div>
+
+                          {/* Settlement Statement Button */}
+                          <div className="flex items-center">
+                            <a
+                              href={`/api/documents/seller-statement/${s.orderId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-3 py-1.5 rounded-xl border border-zinc-700 hover:border-[#c8a96e] text-gray-300 hover:text-white text-xs font-sans transition-colors flex items-center gap-1.5"
+                              title={isHindi ? "ऑर्डर स्टेटमेंट देखें" : "View Settlement Statement"}
+                            >
+                              <span>📄</span>
+                              <span>{isHindi ? "स्टेटमेंट" : "Statement"}</span>
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -3761,6 +3875,46 @@ export default function SellerDashboard() {
                     className={inp}
                   />
                 </div>
+              </div>
+
+              {/* Informational 2% Platform Commission Breakdown */}
+              <div className="rounded-2xl border border-zinc-800 bg-[#141414] p-3.5 sm:p-4 space-y-2.5 text-xs font-sans">
+                <div className="flex items-center justify-between text-gray-400">
+                  <span className="font-medium">
+                    {isHindi ? "विक्रेता मूल कीमत (Base Price)" : "Seller Base Price"}
+                  </span>
+                  <span className="font-bold text-white font-mono text-sm">
+                    {formatCurrencyINR(listingEstimate.sellerBasePrice)}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between text-amber-400/90">
+                  <span>
+                    {isHindi
+                      ? `GoatMart प्लेटफॉर्म कमीशन (${listingEstimate.commissionRate}%)`
+                      : `GoatMart Platform Commission (${listingEstimate.commissionRate}%)`}
+                  </span>
+                  <span className="font-semibold font-mono text-xs">
+                    {listingEstimate.isValidPrice ? `- ${formatCurrencyINR(listingEstimate.estimatedCommission)}` : "₹0"}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between border-t border-zinc-800/80 pt-2 text-xs sm:text-sm">
+                  <span className="font-bold text-emerald-400">
+                    {isHindi
+                      ? "अनुमानित शुद्ध विक्रेता आय (Estimated Net)"
+                      : "Estimated Seller Net Amount"}
+                  </span>
+                  <span className="font-bold text-emerald-400 font-mono text-sm sm:text-base">
+                    {formatCurrencyINR(listingEstimate.estimatedSellerNet)}
+                  </span>
+                </div>
+
+                <p className="text-[11px] text-gray-500 pt-0.5 leading-relaxed">
+                  {isHindi
+                    ? "ℹ️ सूचना: 2% प्लेटफॉर्म कमीशन केवल बकरी की सफल बिक्री पर लागू होता है। लिस्टिंग के लिए कोई अग्रिम शुल्क नहीं है।"
+                    : "ℹ️ Note: 2% platform commission applies only when your goat is sold. No upfront listing fee is charged."}
+                </p>
               </div>
 
               <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">

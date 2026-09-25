@@ -11,6 +11,7 @@ import {
   badRequestResponse,
   serverErrorResponse,
 } from "@/lib/security";
+import { cancelAndRefundOrder } from "@/lib/orderCancellation";
 import { z } from "zod";
 
 const updateOrderStatusSchema = z.object({
@@ -96,18 +97,35 @@ export async function PATCH(
       return forbiddenResponse("You are not authorized to modify this order");
     }
 
-    // Customer permissions: can only cancel pending/payment_confirmed/processing orders
+    // If status is cancelled, route through authoritative cancel and refund engine
+    if (status === "cancelled") {
+      const cancelResult = await cancelAndRefundOrder({
+        orderId: id,
+        userId: user.id,
+        userRole: user.role,
+        reason: typeof body.reason === "string" ? body.reason : undefined,
+      });
+
+      if (!cancelResult.success) {
+        if (cancelResult.code === "UNAUTHORIZED") {
+          return forbiddenResponse(cancelResult.error);
+        }
+        if (cancelResult.code === "ORDER_NOT_FOUND") {
+          return notFoundResponse(cancelResult.error);
+        }
+        return badRequestResponse(cancelResult.error || "Order cancellation failed");
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: cancelResult.order,
+        message: cancelResult.message,
+      });
+    }
+
+    // Customer permissions: can only cancel orders
     if (isCustomer && !isSeller && !isAdmin) {
-      if (status !== "cancelled") {
-        return forbiddenResponse("Customers can only request order cancellation");
-      }
-      if (
-        order.status !== "pending" &&
-        order.status !== "payment_confirmed" &&
-        order.status !== "processing"
-      ) {
-        return badRequestResponse("Cannot cancel an order that has already been dispatched");
-      }
+      return forbiddenResponse("Customers can only request order cancellation");
     }
 
     const now = new Date();
@@ -129,10 +147,6 @@ export async function PATCH(
         order.timeline[4] = { s: "Delivered", d: dateStr, done: true };
         // Ensure goat status remains sold
         await Goat.findByIdAndUpdate(order.goat, { status: "sold" });
-      }
-      if (status === "cancelled") {
-        // Restore goat status back to sale
-        await Goat.findByIdAndUpdate(order.goat, { status: "sale" });
       }
     }
 

@@ -1,6 +1,23 @@
 import mongoose, { Schema, Document, Model } from "mongoose";
 import bcrypt from "bcryptjs";
 
+export interface ISellerBankDetails {
+  accountHolderName: string;
+  accountNumber: string;
+  ifscCode: string;
+  bankName?: string;
+  upiId?: string;
+  isVerified: boolean;
+}
+
+export type PayoutOnboardingStatus = "not_started" | "pending" | "active" | "rejected";
+
+export interface ISellerPayoutOnboarding {
+  razorpayAccountId?: string;
+  status: PayoutOnboardingStatus;
+  activatedAt?: Date;
+}
+
 export interface IUser extends Document {
   _id: mongoose.Types.ObjectId;
   name: string;
@@ -26,6 +43,8 @@ export interface IUser extends Document {
     totalReviews: number;
     totalSales: number;
     joinedAt: Date;
+    bankDetails?: ISellerBankDetails;
+    payoutOnboarding?: ISellerPayoutOnboarding;
   };
   wishlist: mongoose.Types.ObjectId[];
   isEmailVerified: boolean;
@@ -59,6 +78,23 @@ const UserSchema = new Schema<IUser>(
       totalReviews: { type: Number, default: 0, min: 0 },
       totalSales: { type: Number, default: 0, min: 0 },
       joinedAt: { type: Date, default: Date.now },
+      bankDetails: {
+        accountHolderName: { type: String, trim: true },
+        accountNumber: { type: String, trim: true },
+        ifscCode: { type: String, uppercase: true, trim: true },
+        bankName: { type: String, trim: true },
+        upiId: { type: String, trim: true },
+        isVerified: { type: Boolean, default: false },
+      },
+      payoutOnboarding: {
+        razorpayAccountId: { type: String, trim: true },
+        status: {
+          type: String,
+          enum: ["not_started", "pending", "active", "rejected"],
+          default: "not_started",
+        },
+        activatedAt: Date,
+      },
     },
     wishlist: [{ type: Schema.Types.ObjectId, ref: "Goat" }],
     isEmailVerified: { type: Boolean, default: false },

@@ -1,9 +1,44 @@
-﻿export interface Goat{_id:string;name:string;breed:string;weight:number;age:string;price:number;status:"sale"|"sold"|"reserved";health:string;vaccinated:boolean;tag?:string;desc:string;images:string[];videoUrl?:string;seller:string;sellerName:string;sellerRating:number;sellerReviews:number;sellerImg:string;sellerLoc:string;reviews:Review[];averageRating:number;totalReviews:number;views:number;wishlistCount:number;createdAt:string}
+export interface Goat{_id:string;name:string;breed:string;weight:number;age:string;price:number;status:"sale"|"sold"|"reserved";health:string;vaccinated:boolean;tag?:string;desc:string;images:string[];videoUrl?:string;seller:string;sellerName:string;sellerRating:number;sellerReviews:number;sellerImg:string;sellerLoc:string;reviews:Review[];averageRating:number;totalReviews:number;views:number;wishlistCount:number;createdAt:string}
 export interface Review{_id:string;user:string;userName:string;userAvatar:string;rating:number;text:string;createdAt:string}
-export interface Order{_id:string;orderId:string;goat:string|Goat;goatName:string;goatBreed:string;goatImage:string;seller:string;sellerName:string;customer:string;customerName:string;amount:number;status:string;payment:{razorpayOrderId:string;razorpayPaymentId?:string;method?:string;status:string;paidAt?:string};delivery:{name:string;phone:string;email?:string;address:string;city:string;state:string;pin:string;note?:string};timeline:{s:string;d:string;done:boolean}[];reviewed:boolean;createdAt:string}
+export type PayoutStatus = "none" | "unpaid" | "processing" | "paid" | "failed" | "reversed";
+
+export interface OrderPayout {
+  status: PayoutStatus;
+  transferId?: string;
+  recipientAccountId?: string;
+  amount?: number;
+  currency?: string;
+  idempotencyKey?: string;
+  initiatedAt?: string;
+  processedAt?: string;
+  failedAt?: string;
+  reversedAt?: string;
+  failureReason?: string;
+  reversalReason?: string;
+  retryCount?: number;
+}
+
+export interface SellerBankDetails {
+  accountHolderName: string;
+  accountNumber: string;
+  ifscCode: string;
+  bankName?: string;
+  upiId?: string;
+  isVerified: boolean;
+}
+
+export type PayoutOnboardingStatus = "not_started" | "pending" | "active" | "rejected";
+
+export interface SellerPayoutOnboarding {
+  razorpayAccountId?: string;
+  status: PayoutOnboardingStatus;
+  activatedAt?: string;
+}
+
+export interface Order{_id:string;orderId:string;goat:string|Goat;goatName:string;goatBreed:string;goatImage:string;seller:string;sellerName:string;customer:string;customerName:string;amount:number;status:string;payment:{razorpayOrderId:string;razorpayPaymentId?:string;method?:string;status:string;paidAt?:string};delivery:{name:string;phone:string;email?:string;address:string;city:string;state:string;pin:string;note?:string};timeline:{s:string;d:string;done:boolean}[];reviewed:boolean;createdAt:string;sellerBasePrice?:number;commissionRate?:number;commissionAmount?:number;sellerNetPayable?:number;currency?:string;financialCalculationVersion?:string;financialCalculatedAt?:string;cancellation?:{cancelledAt?:string;cancelledBy?:string;cancelledByRole?:string;reason?:string};refund?:{status:string;refundId?:string;amount?:number;currency?:string;initiatedAt?:string;processedAt?:string;failedAt?:string;failureReason?:string;reason?:string};payout?:OrderPayout}
 export interface ChatMessage{_id:string;from:string;fromName:string;fromRole:"customer"|"seller"|"admin";text:string;attachments?:string[];read:boolean;createdAt:string}
 export interface Chat{_id:string;goat:string|Goat;goatName:string;goatImage:string;customer:string;customerName:string;seller:string;sellerName:string;messages:ChatMessage[];lastMessage?:string;lastMessageAt?:string;unreadCount:{customer:number;seller:number}}
-export interface User{_id:string;name:string;email:string;phone?:string;role:"customer"|"seller"|"admin";avatar?:string;address?:{street:string;city:string;state:string;pin:string};sellerProfile?:{farmName:string;description:string;location:string;status:"pending"|"approved"|"suspended";rating:number;totalReviews:number;totalSales:number};wishlist:string[];createdAt:string}
+export interface User{_id:string;name:string;email:string;phone?:string;role:"customer"|"seller"|"admin";avatar?:string;address?:{street:string;city:string;state:string;pin:string};sellerProfile?:{farmName:string;description:string;location:string;status:"pending"|"approved"|"suspended";rating:number;totalReviews:number;totalSales:number;bankDetails?:SellerBankDetails;payoutOnboarding?:SellerPayoutOnboarding};wishlist:string[];createdAt:string}
 export interface ApiResponse<T=unknown>{success:boolean;data?:T;message?:string;error?:string}
 export const BREEDS=["Jamunapari","Beetal","Sirohi","Barbari","Black Bengal","Osmanabadi","Totapari","Sojat","Kota","Malwa","Others"] as const;
 export type Breed=typeof BREEDS[number];

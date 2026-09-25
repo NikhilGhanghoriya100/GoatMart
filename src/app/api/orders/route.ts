@@ -3,6 +3,7 @@ import connectDB from "@/lib/db";
 import Order from "@/models/Order";
 import Goat from "@/models/Goat";
 import { createRazorpayOrder } from "@/lib/razorpay";
+import { calculateOrderFinancials } from "@/lib/commission";
 import {
   getAuthUser,
   isValidObjectId,
@@ -12,6 +13,7 @@ import {
   serverErrorResponse,
   sanitizeString,
 } from "@/lib/security";
+import { logFinancialEvent } from "@/lib/auditLogger";
 import { z } from "zod";
 
 const deliverySchema = z.object({
@@ -80,8 +82,14 @@ export async function POST(req: NextRequest) {
       return badRequestResponse("You cannot purchase your own goat listing");
     }
 
-    // Integrity: Ensure goat is currently available for sale
-    if (goat.status !== "sale") {
+    // Atomically reserve the goat only if it is currently 'sale'
+    const reservedGoat = await Goat.findOneAndUpdate(
+      { _id: goatId, status: "sale" },
+      { $set: { status: "reserved" } },
+      { new: true }
+    );
+
+    if (!reservedGoat) {
       return badRequestResponse(
         goat.status === "sold"
           ? "This goat has already been sold"
@@ -89,7 +97,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const rzpOrder = await createRazorpayOrder(goat.price, `goat_${goatId}`);
+    let rzpOrder: any;
+    try {
+      rzpOrder = await createRazorpayOrder(reservedGoat.price, `goat_${goatId}`);
+    } catch (rzpErr) {
+      // Revert reservation if Razorpay order creation fails
+      await Goat.findByIdAndUpdate(goatId, { status: "sale" });
+      throw rzpErr;
+    }
 
     const sanitizedDelivery = {
       name: sanitizeString(delivery.name),
@@ -102,33 +117,113 @@ export async function POST(req: NextRequest) {
       note: delivery.note ? sanitizeString(delivery.note) : "",
     };
 
-    const order = await Order.create({
-      goat: goatId,
-      goatName: goat.name,
-      goatBreed: goat.breed,
-      goatImage: goat.images[0] || "",
-      seller: goat.seller,
-      sellerName: goat.sellerName,
-      customer: user.id,
-      customerName: user.name,
-      amount: goat.price,
-      status: "pending",
-      payment: {
-        razorpayOrderId: rzpOrder.id,
+    // Phase 2: Compute authoritative server-side financial snapshot
+    // Uses the authoritative seller base price from MongoDB (reservedGoat.price)
+    const financials = calculateOrderFinancials(reservedGoat.price);
+
+    let order;
+    try {
+      order = await Order.create({
+        goat: goatId,
+        goatName: reservedGoat.name,
+        goatBreed: reservedGoat.breed,
+        goatImage: reservedGoat.images[0] || "",
+        seller: reservedGoat.seller,
+        sellerName: reservedGoat.sellerName,
+        customer: user.id,
+        customerName: user.name,
+        amount: reservedGoat.price,
         status: "pending",
-      },
-      delivery: sanitizedDelivery,
-      timeline: [
-        {
-          s: "Order Placed",
-          d: new Date().toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
-          done: true,
+
+        // Phase 2: Permanent immutable financial snapshot
+        sellerBasePrice: financials.sellerBasePrice,
+        commissionRate: financials.commissionRate,
+        commissionAmount: financials.commissionAmount,
+        sellerNetPayable: financials.sellerNetPayable,
+        currency: financials.currency,
+        financialCalculationVersion: financials.financialCalculationVersion,
+        financialCalculatedAt: financials.financialCalculatedAt,
+
+        payment: {
+          razorpayOrderId: rzpOrder.id,
+          status: "pending",
         },
-        { s: "Payment Confirmed", d: "", done: false },
-        { s: "Dispatched", d: "", done: false },
-        { s: "Out for Delivery", d: "", done: false },
-        { s: "Delivered", d: "", done: false },
-      ],
+        delivery: sanitizedDelivery,
+        timeline: [
+          {
+            s: "Order Placed",
+            d: new Date().toLocaleDateString("en-IN", { month: "short", day: "numeric" }),
+            done: true,
+          },
+          { s: "Payment Confirmed", d: "", done: false },
+          { s: "Dispatched", d: "", done: false },
+          { s: "Out for Delivery", d: "", done: false },
+          { s: "Delivered", d: "", done: false },
+        ],
+      });
+      // Link the reserved goat to this order
+      await Goat.findByIdAndUpdate(goatId, { $set: { currentOrderId: order._id } });
+    } catch (dbErr) {
+      // Revert reservation if database order record creation fails
+      await Goat.findByIdAndUpdate(goatId, { status: "sale", currentOrderId: null });
+      throw dbErr;
+    }
+
+    // -------------------------------------------------------------------------
+    // AUDIT: payment_initiated
+    // Fired once, after Razorpay order + DB order are both successfully created.
+    // Records the Razorpay order ID (payment session reference) and the buyer.
+    // providerReference = rzpOrder.id (Razorpay order ID, not a secret/key).
+    // -------------------------------------------------------------------------
+    logFinancialEvent({
+      action: "payment_initiated",
+      entityType: "payment",
+      entityId: rzpOrder.id,
+      orderId: order._id.toString(),
+      actorId: user.id,
+      actorRole: "customer",
+      actorName: user.name || "",
+      amount: order.amount,
+      currency: order.currency || "INR",
+      previousState: undefined,
+      newState: "pending",
+      providerReference: rzpOrder.id,
+      status: "success",
+      metadata: {
+        goatId,
+        razorpayOrderId: rzpOrder.id,
+      },
+    });
+
+    // -------------------------------------------------------------------------
+    // AUDIT: snapshot_created
+    // Fired once, after the immutable financial snapshot is persisted in Order.create().
+    // Creation and finalization are a single atomic DB write — there is no distinct
+    // "finalization" point. This single event represents the permanent snapshot.
+    // Records all stored financial fields from the saved order document.
+    // Does NOT recalculate values — reads them from the authoritative stored order.
+    // -------------------------------------------------------------------------
+    logFinancialEvent({
+      action: "snapshot_created",
+      entityType: "order",
+      entityId: order._id.toString(),
+      orderId: order._id.toString(),
+      actorId: user.id,
+      actorRole: "customer",
+      actorName: user.name || "",
+      amount: order.sellerBasePrice,
+      currency: order.currency || "INR",
+      previousState: undefined,
+      newState: "snapshot_persisted",
+      status: "success",
+      metadata: {
+        sellerBasePrice: order.sellerBasePrice,
+        commissionRate: order.commissionRate,
+        commissionAmount: order.commissionAmount,
+        sellerNetPayable: order.sellerNetPayable,
+        financialCalculationVersion: order.financialCalculationVersion,
+        currency: order.currency || "INR",
+      },
     });
 
     return NextResponse.json({
@@ -136,9 +231,9 @@ export async function POST(req: NextRequest) {
       data: {
         orderId: order._id.toString(),
         razorpayOrderId: rzpOrder.id,
-        amount: goat.price,
+        amount: reservedGoat.price,
         keyId: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || "",
-        isMock: (rzpOrder as any).isMock ?? false,
+        isMock: false,
       },
     });
   } catch (error: any) {

@@ -1,0 +1,169 @@
+import { NextRequest, NextResponse } from "next/server";
+import connectDB from "@/lib/db";
+import Order, { IOrder } from "@/models/Order";
+import User, { IUser } from "@/models/User";
+import {
+  getAuthUser,
+  isValidObjectId,
+  unauthorizedResponse,
+  forbiddenResponse,
+  badRequestResponse,
+  notFoundResponse,
+  serverErrorResponse,
+} from "@/lib/security";
+import {
+  checkOrderPayoutEligibility,
+  initiateOrderPayout,
+} from "@/lib/orderPayout";
+
+/**
+ * GET /api/admin/payouts/[orderId]
+ * Returns detailed payout information and real-time eligibility evaluation for a specific order.
+ */
+export async function GET(
+  _req: NextRequest,
+  context: { params: Promise<{ orderId: string }> }
+) {
+  try {
+    const user = await getAuthUser();
+    if (!user) {
+      return unauthorizedResponse("Authentication required to view payout details");
+    }
+
+    if (user.role !== "admin") {
+      return forbiddenResponse("Forbidden: Admin privileges required");
+    }
+
+    const { orderId } = await context.params;
+    if (!isValidObjectId(orderId)) {
+      return badRequestResponse("Invalid Order ID format");
+    }
+
+    await connectDB();
+
+    const order = await Order.findById(orderId).lean();
+    if (!order) {
+      return notFoundResponse("Order not found");
+    }
+
+    const seller = await User.findById(order.seller)
+      .select(
+        "name email phone sellerProfile.farmName sellerProfile.status sellerProfile.payoutOnboarding.status sellerProfile.payoutOnboarding.razorpayAccountId"
+      )
+      .lean();
+
+    const eligibility = checkOrderPayoutEligibility(
+      order as unknown as IOrder,
+      seller as unknown as IUser | null
+    );
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        id: order._id.toString(),
+        orderId: order.orderId,
+        goatName: order.goatName,
+        customerName: order.customerName,
+        seller: {
+          id: seller?._id?.toString() || order.seller?.toString(),
+          name: seller?.name || order.sellerName,
+          email: seller?.email,
+          farmName: seller?.sellerProfile?.farmName,
+          isApproved: seller?.sellerProfile?.status === "approved",
+          onboardingStatus: seller?.sellerProfile?.payoutOnboarding?.status || "not_started",
+          razorpayAccountId: seller?.sellerProfile?.payoutOnboarding?.razorpayAccountId || null,
+        },
+        sellerBasePrice: order.sellerBasePrice ?? order.amount,
+        commissionRate: order.commissionRate ?? 2.0,
+        commissionAmount: order.commissionAmount ?? 0,
+        sellerNetPayable: order.sellerNetPayable ?? 0,
+        currency: order.currency || "INR",
+        paymentStatus: order.payment?.status,
+        paymentId: order.payment?.razorpayPaymentId || null,
+        orderStatus: order.status,
+        refundStatus: order.refund?.status || "none",
+        payout: order.payout || { status: eligibility.eligible ? "unpaid" : "none" },
+        eligibility,
+        createdAt: order.createdAt,
+      },
+    });
+  } catch (error: any) {
+    console.error("Admin Order Payout Detail Error:", error);
+    return serverErrorResponse("Failed to fetch order payout details");
+  }
+}
+
+/**
+ * POST /api/admin/payouts/[orderId]
+ * Initiates an authoritative seller payout for the specified order.
+ * Strictly restricted to administrators.
+ * Never accepts client-provided amounts or destination accounts.
+ */
+export async function POST(
+  _req: NextRequest,
+  context: { params: Promise<{ orderId: string }> }
+) {
+  try {
+    const user = await getAuthUser();
+    if (!user) {
+      return unauthorizedResponse("Authentication required to initiate payouts");
+    }
+
+    if (user.role !== "admin") {
+      return forbiddenResponse("Forbidden: Only administrators can initiate payouts");
+    }
+
+    const { orderId } = await context.params;
+    if (!isValidObjectId(orderId)) {
+      return badRequestResponse("Invalid Order ID format");
+    }
+
+    await connectDB();
+
+    // Call authoritative Step 9C payout engine
+    const result = await initiateOrderPayout({
+      orderId,
+      performedBy: user.id,
+      performedByRole: "admin",
+    });
+
+    if (!result.success) {
+      const statusCode =
+        result.code === "ORDER_NOT_FOUND" || result.code === "SELLER_NOT_FOUND"
+          ? 404
+          : result.code === "ALREADY_PAID" ||
+            result.code === "PAYOUT_IN_PROGRESS" ||
+            result.code === "CONCURRENT_MODIFICATION"
+          ? 409
+          : result.code === "UNAUTHORIZED"
+          ? 403
+          : result.code === "PROVIDER_TRANSFER_FAILED"
+          ? 502
+          : 400;
+
+      return NextResponse.json(
+        {
+          success: false,
+          code: result.code,
+          error: result.error,
+          status: result.status,
+        },
+        { status: statusCode }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        orderId: result.order?.orderId,
+        payoutStatus: result.status,
+        transferId: result.transferId,
+        amount: result.amount,
+        message: result.message,
+      },
+    });
+  } catch (error: any) {
+    console.error("Admin Order Payout Action Error:", error);
+    return serverErrorResponse("An unexpected error occurred while initiating payout");
+  }
+}

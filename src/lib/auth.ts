@@ -61,6 +61,18 @@ async function verifyFirebaseGoogleToken(idToken: string): Promise<{
   }
 }
 
+if (!process.env.NEXTAUTH_SECRET) {
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "CRITICAL SECURITY CONFIGURATION ERROR: NEXTAUTH_SECRET is required in production environment."
+    );
+  } else {
+    console.warn(
+      "⚠️ [GoatMart Security Warning]: NEXTAUTH_SECRET is not configured in environment variables. Please configure NEXTAUTH_SECRET in .env.local."
+    );
+  }
+}
+
 export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
@@ -226,7 +238,7 @@ export const authOptions: NextAuthOptions = {
     strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60, // 30 days
   },
-  secret: process.env.NEXTAUTH_SECRET || "bakrawale-super-secret-jwt-key-2026-production",
+  secret: process.env.NEXTAUTH_SECRET,
 };
 
 export const getSession = () => getServerSession(authOptions);

@@ -43,6 +43,30 @@ export async function createRazorpayOrder(amount: number, receipt: string) {
   }
 }
 
+export async function fetchRazorpayPayment(paymentId: string) {
+  const currentKey = process.env.RAZORPAY_KEY_ID;
+  const currentSecret = process.env.RAZORPAY_KEY_SECRET;
+
+  if (!currentKey || !currentSecret) {
+    throw new Error(
+      "Razorpay credentials missing. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in .env.local"
+    );
+  }
+
+  const rzpInstance = new Razorpay({
+    key_id: currentKey,
+    key_secret: currentSecret,
+  });
+
+  try {
+    const payment = await rzpInstance.payments.fetch(paymentId);
+    return payment;
+  } catch (error: any) {
+    const desc = error?.error?.description || error?.message || "Failed to fetch Razorpay payment";
+    throw new Error(`Razorpay Payment Fetch Error: ${desc}`);
+  }
+}
+
 /**
  * Timing-safe HMAC verification for Razorpay payment signatures
  */
@@ -53,16 +77,6 @@ export function verifyPaymentSignature(
 ): boolean {
   if (!razorpayOrderId || !razorpayPaymentId || !razorpaySignature) {
     return false;
-  }
-
-  // Support demo / mock / test simulation signatures
-  if (
-    razorpayOrderId.startsWith("order_mock_") ||
-    razorpayPaymentId.startsWith("pay_mock_") ||
-    razorpaySignature.startsWith("sig_mock_") ||
-    razorpaySignature === "demo_signature_valid"
-  ) {
-    return true;
   }
 
   const secret = process.env.RAZORPAY_KEY_SECRET || "";
@@ -80,3 +94,167 @@ export function verifyPaymentSignature(
     return false;
   }
 }
+
+/**
+ * Timing-safe HMAC verification for Razorpay webhook signatures.
+ * Verifies that the raw request body was signed by Razorpay using RAZORPAY_WEBHOOK_SECRET.
+ */
+export function validateWebhookSignature(
+  rawBody: string,
+  signature: string,
+  secret?: string
+): boolean {
+  if (!rawBody || !signature) {
+    return false;
+  }
+
+  const webhookSecret = secret || process.env.RAZORPAY_WEBHOOK_SECRET || "";
+  if (!webhookSecret) {
+    return false;
+  }
+
+  try {
+    const expected = crypto
+      .createHmac("sha256", webhookSecret)
+      .update(rawBody)
+      .digest("hex");
+
+    const expectedBuf = Buffer.from(expected, "utf8");
+    const signatureBuf = Buffer.from(signature, "utf8");
+    if (expectedBuf.length !== signatureBuf.length) return false;
+    return crypto.timingSafeEqual(expectedBuf, signatureBuf);
+  } catch {
+    return false;
+  }
+}
+
+export const verifyWebhookSignature = validateWebhookSignature;
+
+/**
+ * Creates a server-side refund for a paid Razorpay payment.
+ * Requires authoritative server credentials; never accepts client keys.
+ */
+export async function createRazorpayRefund(params: {
+  paymentId: string;
+  amountPaise?: number;
+  notes?: Record<string, string>;
+  receipt?: string;
+}) {
+  const currentKey = process.env.RAZORPAY_KEY_ID;
+  const currentSecret = process.env.RAZORPAY_KEY_SECRET;
+
+  if (!currentKey || !currentSecret) {
+    throw new Error(
+      "Razorpay credentials missing. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in .env.local"
+    );
+  }
+
+  const rzpInstance = new Razorpay({
+    key_id: currentKey,
+    key_secret: currentSecret,
+  });
+
+  try {
+    const refundPayload: any = {};
+    if (typeof params.amountPaise === "number" && params.amountPaise > 0) {
+      refundPayload.amount = params.amountPaise;
+    }
+    if (params.notes) {
+      refundPayload.notes = params.notes;
+    }
+    if (params.receipt) {
+      refundPayload.receipt = params.receipt;
+    }
+
+    const refund = await rzpInstance.payments.refund(params.paymentId, refundPayload);
+    return refund;
+  } catch (error: any) {
+    const desc = error?.error?.description || error?.message || "Razorpay Refund API error";
+    throw new Error(`Razorpay Refund Error: ${desc}`);
+  }
+}
+
+export interface RazorpayTransferResultItem {
+  id: string;
+  entity: string;
+  status: "processed" | "pending" | "failed";
+  source: string;
+  recipient: string;
+  amount: number;
+  currency: string;
+  amount_reversed?: number;
+  notes?: Record<string, string>;
+  fees?: number;
+  tax?: number;
+  on_hold?: boolean;
+  settlement_id?: string | null;
+  created_at?: number;
+  processed_at?: number;
+}
+
+export interface CreatePaymentTransferParams {
+  paymentId: string;
+  recipientAccountId: string;
+  amountPaise: number;
+  currency?: string;
+  notes?: Record<string, string>;
+}
+
+/**
+ * Creates a server-side transfer from a captured Razorpay payment to a linked seller account.
+ * Uses official Razorpay Route SDK method: `rzpInstance.payments.transfer(paymentId, params)`.
+ * Requires authoritative server credentials; never accepts client keys or client-controlled amounts.
+ */
+export async function createRazorpayPaymentTransfer(
+  params: CreatePaymentTransferParams
+): Promise<RazorpayTransferResultItem> {
+  const currentKey = process.env.RAZORPAY_KEY_ID;
+  const currentSecret = process.env.RAZORPAY_KEY_SECRET;
+
+  if (!currentKey || !currentSecret) {
+    throw new Error(
+      "Razorpay credentials missing. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in .env.local"
+    );
+  }
+
+  if (!params.paymentId || typeof params.paymentId !== "string") {
+    throw new Error("Invalid paymentId: must be a valid Razorpay payment ID");
+  }
+
+  if (!params.recipientAccountId || typeof params.recipientAccountId !== "string") {
+    throw new Error("Invalid recipientAccountId: must be a valid Razorpay linked account ID");
+  }
+
+  if (!Number.isInteger(params.amountPaise) || params.amountPaise <= 0) {
+    throw new Error("Invalid amountPaise: must be a positive integer in paise");
+  }
+
+  const rzpInstance = new Razorpay({
+    key_id: currentKey,
+    key_secret: currentSecret,
+  });
+
+  try {
+    const transferPayload = {
+      transfers: [
+        {
+          account: params.recipientAccountId,
+          amount: params.amountPaise,
+          currency: params.currency || "INR",
+          notes: params.notes || {},
+        },
+      ],
+    };
+
+    const response: any = await rzpInstance.payments.transfer(params.paymentId, transferPayload);
+    const transferItem =
+      response?.transfers?.items?.[0] || response?.items?.[0] || response;
+
+    return transferItem as RazorpayTransferResultItem;
+  } catch (error: any) {
+    const desc = error?.error?.description || error?.message || "Razorpay Route Transfer API error";
+    throw new Error(`Razorpay Transfer Error: ${desc}`);
+  }
+}
+
+
