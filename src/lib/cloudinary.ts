@@ -57,41 +57,61 @@ export async function uploadImage(
   source: string,
   folder = "bakrawale/goats"
 ): Promise<UploadResult> {
-  configureCloudinary();
-  const r = await cloudinary.uploader.upload(source, {
-    folder,
-    transformation: [
-      { width: 1000, height: 1000, crop: "limit" },
-      { quality: "auto:good" },
-      { fetch_format: "auto" },
-    ],
-  });
-  return {
-    url: r.secure_url,
-    publicId: r.public_id,
-    width: r.width,
-    height: r.height,
-    format: r.format,
-    bytes: r.bytes,
-  };
+  const config = configureCloudinary();
+  try {
+    const r = await cloudinary.uploader.upload(source, {
+      folder,
+      transformation: [
+        { width: 1000, height: 1000, crop: "limit" },
+        { quality: "auto:good" },
+        { fetch_format: "auto" },
+      ],
+    });
+    return {
+      url: r.secure_url,
+      publicId: r.public_id,
+      width: r.width,
+      height: r.height,
+      format: r.format,
+      bytes: r.bytes,
+    };
+  } catch (err: any) {
+    if (err?.http_code === 403) {
+      console.error(
+        `[Cloudinary] HTTP 403 Forbidden: API key lacks required 'create' (upload) permission in Cloudinary Product Environment (${config.cloud_name}). Verify permissions or Master Access Key in Cloudinary Console -> Settings -> Access Keys.`
+      );
+      err.actionRequired = "Enable 'create' (upload) permission or use Master Access Key in Cloudinary Console -> Settings -> Access Keys.";
+    }
+    throw err;
+  }
 }
 
 export async function uploadVideo(
   source: string,
   folder = "bakrawale/videos"
 ): Promise<UploadResult> {
-  configureCloudinary();
-  const r = await cloudinary.uploader.upload(source, {
-    resource_type: "video",
-    folder,
-    transformation: [{ width: 1280, height: 720, crop: "limit" }],
-  });
-  return {
-    url: r.secure_url,
-    publicId: r.public_id,
-    format: r.format,
-    bytes: r.bytes,
-  };
+  const config = configureCloudinary();
+  try {
+    const r = await cloudinary.uploader.upload(source, {
+      resource_type: "video",
+      folder,
+      transformation: [{ width: 1280, height: 720, crop: "limit" }],
+    });
+    return {
+      url: r.secure_url,
+      publicId: r.public_id,
+      format: r.format,
+      bytes: r.bytes,
+    };
+  } catch (err: any) {
+    if (err?.http_code === 403) {
+      console.error(
+        `[Cloudinary] HTTP 403 Forbidden: API key lacks required 'create' (upload) permission in Cloudinary Product Environment (${config.cloud_name}). Verify permissions or Master Access Key in Cloudinary Console -> Settings -> Access Keys.`
+      );
+      err.actionRequired = "Enable 'create' (upload) permission or use Master Access Key in Cloudinary Console -> Settings -> Access Keys.";
+    }
+    throw err;
+  }
 }
 
 export async function deleteFile(

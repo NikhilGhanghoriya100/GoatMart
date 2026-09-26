@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { uploadImage, uploadVideo } from "@/lib/cloudinary";
+import { uploadImage, uploadVideo, configureCloudinary } from "@/lib/cloudinary";
 import {
   getAuthUser,
   isApprovedSeller,
@@ -69,6 +69,11 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(bytes);
     const base64 = `data:${file.type};base64,${buffer.toString("base64")}`;
 
+    const config = configureCloudinary();
+    console.log(
+      `[Upload API] Initiating ${type} upload to Cloudinary (cloud: ${config.cloud_name}, key_present: ${!!config.api_key}, secret_present: ${!!config.api_secret})`
+    );
+
     try {
       const result =
         type === "video" || type === "audio"
@@ -82,6 +87,7 @@ export async function POST(req: NextRequest) {
         message: cloudErr?.message,
         http_code: cloudErr?.http_code,
         name: cloudErr?.name,
+        actionRequired: cloudErr?.actionRequired,
       });
       return NextResponse.json(
         {

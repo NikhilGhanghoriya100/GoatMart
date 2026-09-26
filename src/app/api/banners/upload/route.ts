@@ -59,7 +59,10 @@ export async function POST(req: NextRequest) {
     console.log(`[Banner Upload] Uploading slide ${slideIndex} to Cloudinary...`);
 
     // Use cloudinary.uploader.upload (NOT upload_stream) with base64 — avoids stream hang
-    configureCloudinary();
+    const config = configureCloudinary();
+    console.log(
+      `[Banner Upload] Initiating slide ${slideIndex} upload to Cloudinary (cloud: ${config.cloud_name}, key_present: ${!!config.api_key}, secret_present: ${!!config.api_secret})`
+    );
     let uploadResult: any;
     try {
       uploadResult = await cloudinary.uploader.upload(base64, {
@@ -77,6 +80,7 @@ export async function POST(req: NextRequest) {
         message: cloudErr?.message,
         http_code: cloudErr?.http_code,
         name: cloudErr?.name,
+        actionRequired: cloudErr?.http_code === 403 ? "Enable 'create' (upload) permission or use Master Access Key in Cloudinary Console -> Settings -> Access Keys." : undefined,
       });
       return NextResponse.json(
         {
