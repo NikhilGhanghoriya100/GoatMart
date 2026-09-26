@@ -45,7 +45,11 @@ export async function GET() {
       user.role === "admin"
         ? {}
         : user.role === "seller"
-        ? { seller: user.id }
+        ? {
+            seller: user.id,
+            "payment.status": "paid",
+            status: { $nin: ["cancelled", "refunded"] },
+          }
         : { customer: user.id };
 
     const orders = await Order.find(query).sort({ createdAt: -1 }).lean();
@@ -126,6 +130,7 @@ export async function POST(req: NextRequest) {
       sellerBasePrice: financials.sellerBasePrice,
       deliveryCharge: financials.deliveryCharge,
       buyerPlatformFee: financials.buyerPlatformFee,
+      buyerPlatformFeeRate: financials.buyerPlatformFeeRate,
       sellerDeliveryAmount: financials.sellerDeliveryAmount,
       sellerGoatNet: financials.sellerGoatNet,
       commissionRate: financials.commissionRate,
@@ -220,6 +225,7 @@ export async function POST(req: NextRequest) {
         sellerBasePrice: order.sellerBasePrice,
         deliveryCharge: order.deliveryCharge,
         buyerPlatformFee: order.buyerPlatformFee,
+        buyerPlatformFeeRate: order.buyerPlatformFeeRate,
         sellerDeliveryAmount: order.sellerDeliveryAmount,
         sellerGoatNet: order.sellerGoatNet,
         commissionRate: order.commissionRate,

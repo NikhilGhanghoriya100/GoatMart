@@ -112,6 +112,10 @@ export interface SellerStatementData {
     sellerGoatNet: number;
     sellerDeliveryAmount: number;
     sellerNetPayable: number;
+    actualSettledAmount?: number;
+    settlementAdjustment?: number;
+    adjustmentReason?: string | null;
+    isSettled?: boolean;
     currency: string;
     calculationVersion: string;
   };
@@ -126,6 +130,11 @@ export interface SellerStatementData {
     transferId: string | null;
     recipientAccountId: string | null;
     processedAt: string | null;
+    referenceId?: string | null;
+    payoutMethod?: string | null;
+    paidAt?: string | null;
+    adminNote?: string | null;
+    amount?: number;
   };
 }
 
@@ -200,6 +209,7 @@ export interface RefundStatementData {
     originalGoatPrice: number;
     deliveryCharge: number;
     buyerPlatformFee: number;
+    buyerPlatformFeeRate?: number;
     totalCustomerPaid: number;
     refundCommissionRate: number;
     refundCommissionAmount: number;
@@ -329,8 +339,6 @@ export function generateOrderInvoiceData(
   // Authoritative buyer platform fee from stored order snapshot (do not recalculate if stored)
   const storedBuyerPlatformFee =
     typeof actualOrder.buyerPlatformFee === "number" ? actualOrder.buyerPlatformFee : undefined;
-  const storedBuyerFeeRate =
-    typeof actualOrder.buyerPlatformFeeRate === "number" ? actualOrder.buyerPlatformFeeRate : 2.0;
 
   // Safe backwards-compatible fallback for legacy orders without stored buyerPlatformFee:
   // Only detect a fee if total amount strictly exceeds basePrice + deliveryFee
@@ -340,6 +348,13 @@ export function generateOrderInvoiceData(
       : (typeof actualOrder.amount === "number" && actualOrder.amount > basePrice + deliveryFee)
       ? actualOrder.amount - (basePrice + deliveryFee)
       : undefined;
+
+  const storedBuyerFeeRate =
+    typeof actualOrder.buyerPlatformFeeRate === "number"
+      ? actualOrder.buyerPlatformFeeRate
+      : buyerPlatformFee && buyerPlatformFee > 0 && basePrice > 0
+      ? Number(((buyerPlatformFee / basePrice) * 100).toFixed(1))
+      : 0;
 
   const totalPaid =
     typeof actualOrder.amount === "number"
@@ -358,10 +373,10 @@ export function generateOrderInvoiceData(
     customerTotalPaid: totalPaid,
     marketplace: {
       nameEn: "GoatMart Marketplace",
-      nameHi: "बकरावाले - GoatMart बाज़ार",
+      nameHi: "GoatMart बाज़ार",
       taglineEn: "India's Trusted Premium Livestock Marketplace",
       taglineHi: "भारत का विश्वसनीय प्रीमियम पशुधन बाज़ार",
-      platform: "bakrawale.com / GoatMart",
+      platform: "www.thegoatmart.com / GoatMart",
     },
     buyer: {
       name: order.delivery?.name || customer?.name || order.customerName || "Valued Buyer",
@@ -428,7 +443,13 @@ export function generateSellerStatementData(
   const deliveryCharge =
     typeof order.deliveryCharge === "number" ? order.deliveryCharge : 0;
   const commissionRate =
-    typeof order.commissionRate === "number" ? order.commissionRate : 2.0;
+    typeof order.commissionRate === "number"
+      ? order.commissionRate
+      : (typeof order.commissionAmount === "number" && order.commissionAmount === 0)
+      ? 0
+      : (typeof order.commissionAmount === "number" && sellerBasePrice > 0)
+      ? Number(((order.commissionAmount / sellerBasePrice) * 100).toFixed(1))
+      : 2.0;
   const commissionAmount =
     typeof order.commissionAmount === "number"
       ? order.commissionAmount
@@ -446,6 +467,15 @@ export function generateSellerStatementData(
       ? order.sellerNetPayable
       : sellerGoatNet + sellerDeliveryAmount;
 
+  const isSettled = order.payout?.status === "paid";
+  const actualSettledAmount = isSettled && typeof order.payout?.amount === "number"
+    ? order.payout.amount
+    : sellerNetPayable;
+  const settlementAdjustment = isSettled && typeof order.payout?.amount === "number"
+    ? Number((order.payout.amount - sellerNetPayable).toFixed(2))
+    : 0;
+  const adjustmentReason = order.payout?.adminNote || null;
+
   return {
     documentType: "seller_statement",
     statementNumber: generateStatementNumber(order.orderId),
@@ -454,7 +484,7 @@ export function generateSellerStatementData(
     saleDate: formatDate(order.payment?.paidAt || order.createdAt),
     marketplace: {
       nameEn: "GoatMart Platform Settlements",
-      nameHi: "बकरावाले - GoatMart विक्रेता निपटान",
+      nameHi: "GoatMart विक्रेता निपटान",
     },
     seller: {
       id: seller?._id?.toString() || order.seller?.toString() || "",
@@ -481,6 +511,10 @@ export function generateSellerStatementData(
       sellerGoatNet,
       sellerDeliveryAmount,
       sellerNetPayable,
+      actualSettledAmount,
+      settlementAdjustment: Math.abs(settlementAdjustment) > 0.01 ? settlementAdjustment : undefined,
+      adjustmentReason,
+      isSettled,
       currency: order.currency || "INR",
       calculationVersion: order.financialCalculationVersion || "2.0",
     },
@@ -494,7 +528,12 @@ export function generateSellerStatementData(
       statusLabelHi: payoutStatusInfo.hi,
       transferId: order.payout?.transferId || null,
       recipientAccountId: order.payout?.recipientAccountId || null,
-      processedAt: order.payout?.processedAt ? formatDate(order.payout.processedAt) : null,
+      processedAt: order.payout?.processedAt || order.payout?.paidAt ? formatDate(order.payout.processedAt || order.payout.paidAt) : null,
+      referenceId: order.payout?.referenceId || order.payout?.utrNumber || order.payout?.transferId || null,
+      payoutMethod: order.payout?.payoutMethod || null,
+      paidAt: order.payout?.paidAt ? formatDate(order.payout.paidAt) : null,
+      adminNote: order.payout?.adminNote || null,
+      amount: actualSettledAmount,
     },
   };
 }
@@ -511,11 +550,14 @@ export function generatePayoutReceiptData(
   }
 
   const payoutStatusInfo = getBilingualStatus(actualOrder.payout?.status || "unpaid");
-  const sellerNetPayable =
-    typeof actualOrder.sellerNetPayable === "number"
-      ? actualOrder.sellerNetPayable
+  const isPaidPayout = actualOrder.payout?.status === "paid";
+  const actualDisbursedAmount =
+    isPaidPayout && typeof actualOrder.payout?.amount === "number"
+      ? actualOrder.payout.amount
       : typeof actualOrder.payout?.amount === "number"
       ? actualOrder.payout.amount
+      : typeof actualOrder.sellerNetPayable === "number"
+      ? actualOrder.sellerNetPayable
       : 0;
 
   return {
@@ -523,10 +565,10 @@ export function generatePayoutReceiptData(
     receiptNumber: generatePayoutReceiptNumber(actualOrder.orderId),
     orderId: actualOrder.orderId,
     receiptDate: formatDate(new Date()),
-    payoutDate: formatDate(actualOrder.payout?.processedAt || actualOrder.payout?.initiatedAt || new Date()),
+    payoutDate: formatDate(actualOrder.payout?.processedAt || actualOrder.payout?.paidAt || actualOrder.payout?.initiatedAt || new Date()),
     marketplace: {
       nameEn: "GoatMart Seller Payout Disbursements",
-      nameHi: "बकरावाले - GoatMart पेआउट प्रेषण",
+      nameHi: "GoatMart पेआउट प्रेषण",
     },
     seller: {
       id: actualSeller?._id?.toString() || actualOrder.seller?.toString() || "",
@@ -538,7 +580,7 @@ export function generatePayoutReceiptData(
       status: actualOrder.payout?.status || "none",
       statusLabelEn: payoutStatusInfo.en,
       statusLabelHi: payoutStatusInfo.hi,
-      amount: sellerNetPayable,
+      amount: actualDisbursedAmount,
       currency: actualOrder.currency || "INR",
       transferId: actualOrder.payout?.transferId || null,
       recipientAccountId: actualOrder.payout?.recipientAccountId || null,
@@ -596,6 +638,12 @@ export function generateRefundStatementData(
   const originalGoatPrice = typeof order.sellerBasePrice === "number" ? order.sellerBasePrice : (order.amount || 0);
   const deliveryCharge = typeof order.deliveryCharge === "number" ? order.deliveryCharge : 0;
   const buyerPlatformFee = typeof order.buyerPlatformFee === "number" ? order.buyerPlatformFee : 0;
+  const buyerPlatformFeeRate =
+    typeof order.buyerPlatformFeeRate === "number"
+      ? order.buyerPlatformFeeRate
+      : buyerPlatformFee > 0 && originalGoatPrice > 0
+      ? Number(((buyerPlatformFee / originalGoatPrice) * 100).toFixed(1))
+      : 0;
 
   const platformExpenseObj = Array.isArray(order.expenses)
     ? order.expenses.find((e: any) => e.type === "platform")
@@ -613,7 +661,7 @@ export function generateRefundStatementData(
     refundDate: formatDate(order.refund?.processedAt || order.cancellation?.cancelledAt || new Date()),
     marketplace: {
       nameEn: "GoatMart Marketplace",
-      nameHi: "बकरावाले - GoatMart बाज़ार",
+      nameHi: "GoatMart बाज़ार",
     },
     buyer: {
       name: order.delivery?.name || customer?.name || order.customerName || "Valued Buyer",
@@ -637,6 +685,7 @@ export function generateRefundStatementData(
       originalGoatPrice,
       deliveryCharge,
       buyerPlatformFee,
+      buyerPlatformFeeRate,
       totalCustomerPaid: totalPaid,
       refundCommissionRate,
       refundCommissionAmount,
@@ -1031,7 +1080,7 @@ export function renderInvoiceHtml(data: InvoiceDocumentData): string {
           ${
             typeof data.financials.buyerPlatformFee === "number" && data.financials.buyerPlatformFee > 0
               ? `<div class="summary-row">
-            <span>Buyer Platform Fee (${data.financials.buyerPlatformFeeRate ?? 2}% of Goat Price) / खरीदार प्लेटफ़ॉर्म शुल्क (2%):</span>
+            <span>Buyer Platform Fee (${data.financials.buyerPlatformFeeRate ?? 0}% of Goat Price) / खरीदार प्लेटफ़ॉर्म शुल्क (${data.financials.buyerPlatformFeeRate ?? 0}%):</span>
             <span style="font-weight: 600;">${formatCurrencyINR(data.financials.buyerPlatformFee)}</span>
           </div>`
               : `<div class="summary-row">
@@ -1090,7 +1139,7 @@ export function renderInvoiceHtml(data: InvoiceDocumentData): string {
         GoatMart Platform • Snapshot Version v${data.financials.calculationVersion}
       </div>
       <div style="text-align: right;">
-        www.bakrawale.com
+        www.thegoatmart.com
       </div>
     </div>
   </div>
@@ -1186,9 +1235,9 @@ export function renderSellerStatementHtml(data: SellerStatementData): string {
             <tr>
               <td style="color: #b91c1c;">
                 <strong>Platform Fee / प्लेटफ़ॉर्म कमीशन</strong>
-                <div style="font-size: 11px; color: #71717a;">GoatMart commission (2% only on goat price)</div>
+                <div style="font-size: 11px; color: #71717a;">GoatMart commission (${data.financials.commissionRate}% only on goat price)</div>
               </td>
-              <td>Base Price × 2.0%</td>
+              <td>Base Price × ${data.financials.commissionRate}%</td>
               <td class="text-right font-mono" style="color: #b91c1c;">${data.financials.commissionRate}%</td>
               <td class="text-right font-mono font-bold" style="color: #b91c1c;">-${formatCurrencyINR(data.financials.commissionAmount)}</td>
             </tr>
@@ -1213,7 +1262,7 @@ export function renderSellerStatementHtml(data: SellerStatementData): string {
             <tr style="background: #fdfaf6;">
               <td style="color: #8b5e2a;">
                 <strong>Seller Net Payable / विक्रेता को कुल शुद्ध देय राशि</strong>
-                <div style="font-size: 11px; color: #71717a;">Goat Net + Delivery Revenue due to seller</div>
+                <div style="font-size: 11px; color: #71717a;">Contractual estimated amount: Goat Net + Delivery Revenue</div>
               </td>
               <td>Goat Net + Delivery Revenue</td>
               <td class="text-right font-mono">Net Total</td>
@@ -1221,6 +1270,39 @@ export function renderSellerStatementHtml(data: SellerStatementData): string {
                 ${formatCurrencyINR(data.financials.sellerNetPayable)}
               </td>
             </tr>
+            ${
+              data.financials.isSettled && typeof data.financials.actualSettledAmount === "number"
+                ? `
+            ${
+              typeof data.financials.settlementAdjustment === "number" && Math.abs(data.financials.settlementAdjustment) > 0.01
+                ? `<tr style="background: #fffbeb;">
+                    <td style="color: #b45309;">
+                      <strong>Settlement Adjustment / निपटान समायोजन</strong>
+                      <div style="font-size: 11px; color: #78716c;">
+                        ${data.financials.adjustmentReason ? `Note / टिप्पणी: ${data.financials.adjustmentReason}` : "Admin-recorded payout adjustment"}
+                      </div>
+                    </td>
+                    <td>Actual Disbursement Adjustment</td>
+                    <td class="text-right font-mono">Adjustment</td>
+                    <td class="text-right font-mono font-bold" style="color: ${data.financials.settlementAdjustment < 0 ? '#b91c1c' : '#166534'};">
+                      ${data.financials.settlementAdjustment > 0 ? "+" : ""}${formatCurrencyINR(data.financials.settlementAdjustment)}
+                    </td>
+                  </tr>`
+                : ""
+            }
+            <tr style="background: #f0fdf4; border-top: 2px solid #86efac;">
+              <td style="color: #166534;">
+                <strong>Actual Amount Paid / वास्तविक भुगतान राशि</strong>
+                <div style="font-size: 11px; color: #15803d;">Actual disbursed funds transferred to seller by admin</div>
+              </td>
+              <td>Settled Payout Amount</td>
+              <td class="text-right font-mono">Disbursed</td>
+              <td class="text-right font-mono font-bold" style="color: #166534; font-size: 16px;">
+                ${formatCurrencyINR(data.financials.actualSettledAmount)}
+              </td>
+            </tr>`
+                : ""
+            }
           </tbody>
         </table>
       </div>
@@ -1229,23 +1311,41 @@ export function renderSellerStatementHtml(data: SellerStatementData): string {
       <div class="payment-callout ${data.payout.status === "paid" ? "status-paid" : data.payout.status === "failed" ? "status-failed" : "status-pending"}">
         <div>
           <div style="font-size: 12px; font-weight: 700; text-transform: uppercase;">
-            Payout Status / भुगतान प्रेषण स्थिति: ${data.payout.statusLabelEn} (${data.payout.statusLabelHi})
-          </div>
-          <div style="font-size: 11px; margin-top: 3px;">
-            Target Account / लक्षित खाता: <strong>${data.payout.recipientAccountId || "Configured Linked Account"}</strong>
+            ${data.payout.status === "paid" ? "SETTLED / भुगतान प्रेषण संपन्न • " : ""}
+            Payout Status / स्थिति: ${data.payout.statusLabelEn} (${data.payout.statusLabelHi})
           </div>
           ${
-            data.payout.transferId
-              ? `<div style="font-size: 11px; font-family: monospace; margin-top: 2px;">
-                  Provider Transfer ID / ट्रांसफर आईडी: <strong>${data.payout.transferId}</strong>
+            data.payout.referenceId
+              ? `<div style="font-size: 11px; font-family: monospace; margin-top: 3px;">
+                  Transaction Reference / UTR ID: <strong>${data.payout.referenceId}</strong>
+                </div>`
+              : data.payout.transferId
+              ? `<div style="font-size: 11px; font-family: monospace; margin-top: 3px;">
+                  Transfer ID: <strong>${data.payout.transferId}</strong>
+                </div>`
+              : `<div style="font-size: 11px; margin-top: 3px;">
+                  Target Account / खाता: <strong>${data.payout.recipientAccountId || "Configured Linked Account"}</strong>
+                </div>`
+          }
+          ${
+            data.payout.payoutMethod
+              ? `<div style="font-size: 11px; margin-top: 2px; color: #52525b;">
+                  Payout Method / माध्यम: <strong>${data.payout.payoutMethod}</strong>
+                </div>`
+              : ""
+          }
+          ${
+            data.payout.adminNote
+              ? `<div style="font-size: 11px; color: #52525b; margin-top: 2px;">
+                  Admin Settlement Note / टिप्पणी: <em>${data.payout.adminNote}</em>
                 </div>`
               : ""
           }
         </div>
         ${
-          data.payout.processedAt
+          data.payout.paidAt || data.payout.processedAt
             ? `<div style="font-size: 12px; text-align: right;">
-                Disbursed On / प्रेषण दिनांक:<br><strong>${data.payout.processedAt}</strong>
+                Disbursed On / प्रेषण दिनांक:<br><strong>${data.payout.paidAt || data.payout.processedAt}</strong>
               </div>`
             : ""
         }
@@ -1259,7 +1359,8 @@ export function renderSellerStatementHtml(data: SellerStatementData): string {
         Snapshot Version: v${data.financials.calculationVersion} • Currency: ${data.financials.currency}
       </div>
       <div style="text-align: right;">
-        GoatMart Settlements
+        GoatMart Settlements<br>
+        www.thegoatmart.com
       </div>
     </div>
   </div>
@@ -1446,7 +1547,7 @@ export function renderPayoutReceiptHtml(data: PayoutReceiptData): string {
         All amounts reconciled from authoritative order snapshots.
       </div>
       <div style="text-align: right;">
-        www.bakrawale.com
+        www.thegoatmart.com
       </div>
     </div>
   </div>
@@ -1557,8 +1658,8 @@ export function renderRefundStatementHtml(data: RefundStatementData): string {
               data.breakdown.buyerPlatformFee > 0
                 ? `<tr>
                     <td>
-                      <strong>Buyer Platform Fee / खरीदार प्लेटफ़ॉर्म शुल्क (2%)</strong>
-                      <div style="font-size: 11px; color: #71717a;">2% buyer platform facilitation fee on goat price</div>
+                      <strong>Buyer Platform Fee / खरीदार प्लेटफ़ॉर्म शुल्क (${data.breakdown.buyerPlatformFeeRate ?? 0}%)</strong>
+                      <div style="font-size: 11px; color: #71717a;">${data.breakdown.buyerPlatformFeeRate ?? 0}% buyer platform facilitation fee on goat price</div>
                     </td>
                     <td>Platform Fee</td>
                     <td class="text-right">-</td>
@@ -1670,7 +1771,7 @@ export function renderRefundStatementHtml(data: RefundStatementData): string {
         Processed via Razorpay Payment Gateway • GoatMart Platform
       </div>
       <div style="text-align: right;">
-        www.bakrawale.com
+        www.thegoatmart.com
       </div>
     </div>
   </div>

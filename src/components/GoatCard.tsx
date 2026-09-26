@@ -177,13 +177,6 @@ export default function GoatCard({ goat }: { goat: Goat }) {
             <div className="text-sm sm:text-base md:text-lg font-bold font-serif text-zinc-950 dark:text-white truncate">
               {fmt(goat.price)}
             </div>
-            <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-sans font-medium truncate">
-              {goat.deliveryCharge && goat.deliveryCharge > 0
-                ? `+ ${fmt(goat.deliveryCharge)} ${isHindi ? "डिलीवरी" : "Delivery"}`
-                : isHindi
-                ? "मुफ़्त डिलीवरी"
-                : "Free Delivery"}
-            </div>
           </div>
 
           {/* Click Here Button */}

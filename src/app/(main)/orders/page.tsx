@@ -3,7 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, MapPin, MessageSquare, Star, XCircle, AlertTriangle } from "lucide-react";
+import { ArrowLeft, MapPin, MessageSquare, Star, XCircle, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useOrders } from "@/hooks/useOrders";
 import { useTranslation } from "@/hooks/useTranslation";
 import { fmt } from "@/lib/utils";
@@ -351,11 +351,17 @@ export default function OrdersPage() {
               </div>
             </div>
 
-            {/* Tracking View Actions (Cancel & Chat) */}
-            <div className="mt-5 pt-4 border-t border-gray-100 dark:border-zinc-800 flex gap-2">
+            {/* Tracking View Actions (Chat, Invoice, Cancel & Review) */}
+            <div className="mt-5 pt-4 border-t border-gray-100 dark:border-zinc-800 flex gap-2 flex-wrap">
               <button
-                onClick={() => router.push(`/chat?goat=${trackedOrder.goat}`)}
-                className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-zinc-200 text-xs font-bold font-sans flex items-center justify-center gap-1.5 hover:border-[#c8a96e] transition-colors"
+                onClick={() => {
+                  const goatId =
+                    typeof trackedOrder.goat === "object" && trackedOrder.goat !== null
+                      ? (trackedOrder.goat as any)._id
+                      : trackedOrder.goat;
+                  router.push(`/chat?goat=${goatId}`);
+                }}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-zinc-200 text-xs font-bold font-sans flex items-center justify-center gap-1.5 hover:border-[#c8a96e] transition-colors min-w-[100px]"
               >
                 <MessageSquare size={14} />
                 <span>{t.contactSeller}</span>
@@ -364,7 +370,7 @@ export default function OrdersPage() {
                 href={`/api/documents/invoice/${trackedOrder._id}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-zinc-200 text-xs font-bold font-sans flex items-center justify-center gap-1.5 hover:border-[#c8a96e] transition-colors"
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-zinc-700 text-gray-700 dark:text-zinc-200 text-xs font-bold font-sans flex items-center justify-center gap-1.5 hover:border-[#c8a96e] transition-colors min-w-[80px]"
                 title={isHindi ? "ऑर्डर इनवॉयस / रसीद देखें" : "View Order Invoice & Receipt"}
               >
                 <span>📄</span>
@@ -373,11 +379,34 @@ export default function OrdersPage() {
               {isEligibleForCancel(trackedOrder.status) && (
                 <button
                   onClick={() => setCancelModalOrder(trackedOrder)}
-                  className="flex-1 py-2.5 rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/20 text-red-600 dark:text-red-400 text-xs font-bold font-sans flex items-center justify-center gap-1.5 hover:bg-red-100/60 dark:hover:bg-red-900/40 transition-colors"
+                  className="flex-1 py-2.5 rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50/50 dark:bg-red-950/20 text-red-600 dark:text-red-400 text-xs font-bold font-sans flex items-center justify-center gap-1.5 hover:bg-red-100/60 dark:hover:bg-red-900/40 transition-colors min-w-[100px]"
                 >
                   <XCircle size={14} />
                   <span>{t.cancelOrder || (isHindi ? "ऑर्डर रद्द करें" : "Cancel Order")}</span>
                 </button>
+              )}
+              {/* Delivered Review Actions */}
+              {trackedOrder.status === "delivered" && (
+                trackedOrder.reviewed ? (
+                  <div className="flex-1 py-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 text-xs font-bold font-sans flex items-center justify-center gap-1.5 min-w-[120px]">
+                    <CheckCircle2 size={14} className="text-emerald-600 dark:text-emerald-400" />
+                    <span>{isHindi ? "✓ रिव्यू दिया गया" : "✓ Review Submitted"}</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => {
+                      const goatId =
+                        typeof trackedOrder.goat === "object" && trackedOrder.goat !== null
+                          ? (trackedOrder.goat as any)._id
+                          : trackedOrder.goat;
+                      router.push(`/goat/${goatId}#reviews`);
+                    }}
+                    className="flex-1 py-2.5 rounded-xl border border-amber-500/50 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 text-xs font-bold font-sans flex items-center justify-center gap-1.5 hover:bg-amber-100 dark:hover:bg-amber-900/40 hover:border-amber-600 dark:hover:border-amber-500 transition-colors min-w-[120px] shadow-xs cursor-pointer"
+                  >
+                    <Star size={14} className="fill-amber-400 text-amber-400" />
+                    <span>{isHindi ? "रिव्यू दें" : "Write a Review"}</span>
+                  </button>
+                )
               )}
             </div>
           </div>
@@ -490,13 +519,28 @@ export default function OrdersPage() {
                         <XCircle size={12} /> {t.cancelOrder || (isHindi ? "रद्द करें" : "Cancel")}
                       </button>
                     )}
-                    {order.status === "delivered" && !order.reviewed && (
-                      <button
-                        onClick={() => router.push(`/goat/${order.goat}`)}
-                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-[#c8a96e22] text-[#8b5e2a] dark:text-[#c8a96e] text-xs font-bold font-sans hover:bg-[#c8a96e33] transition-colors min-w-[80px]"
-                      >
-                        <Star size={12} /> {t.writeReview}
-                      </button>
+                    {/* Delivered Review Actions */}
+                    {order.status === "delivered" && (
+                      order.reviewed ? (
+                        <div className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 text-xs font-bold font-sans min-w-[110px]">
+                          <CheckCircle2 size={12} className="text-emerald-600 dark:text-emerald-400" />
+                          <span>{isHindi ? "✓ रिव्यू दिया गया" : "✓ Review Submitted"}</span>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            const goatId =
+                              typeof order.goat === "object" && order.goat !== null
+                                ? (order.goat as any)._id
+                                : order.goat;
+                            router.push(`/goat/${goatId}#reviews`);
+                          }}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl border border-amber-500/50 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 text-xs font-bold font-sans hover:bg-amber-100 dark:hover:bg-amber-900/40 hover:border-amber-600 dark:hover:border-amber-500 transition-colors min-w-[110px] shadow-xs cursor-pointer"
+                        >
+                          <Star size={12} className="fill-amber-400 text-amber-400" />
+                          <span>{isHindi ? "रिव्यू दें" : "Write a Review"}</span>
+                        </button>
+                      )
                     )}
                   </div>
                 </div>

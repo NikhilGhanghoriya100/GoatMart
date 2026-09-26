@@ -44,12 +44,19 @@ export async function GET(req: NextRequest) {
         displayStatus = "FAILED";
       }
 
+      // Settled payout records return the actual paid amount; unpaid records return estimated payable
+      const actualDisbursedAmount = isPaid
+        ? (typeof o.payout?.amount === "number" ? o.payout.amount : (o.sellerNetPayable ?? 0))
+        : (o.sellerNetPayable ?? 0);
+
       return {
         id: o._id.toString(),
         orderId: o.orderId,
         goatName: o.goatName,
         goatBreed: o.goatBreed,
-        sellerPayable: o.sellerNetPayable ?? 0,
+        sellerPayable: actualDisbursedAmount,
+        estimatedPayable: o.sellerNetPayable ?? 0,
+        actualPayoutAmount: isPaid && typeof o.payout?.amount === "number" ? o.payout.amount : null,
         sellerBasePrice: o.sellerBasePrice ?? o.amount,
         deliveryCharge: o.deliveryCharge ?? 0,
         status: displayStatus,

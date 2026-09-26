@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import connectDB from "@/lib/db";
 import Goat from "@/models/Goat";
 import Order from "@/models/Order";
+import User from "@/models/User";
 import {
   getAuthUser,
   isValidObjectId,
@@ -15,8 +17,15 @@ import {
 import { z } from "zod";
 
 const reviewSchema = z.object({
-  rating: z.number().int().min(1, "Rating must be at least 1").max(5, "Rating cannot exceed 5"),
-  text: z.string().min(2, "Review text must be at least 2 characters").max(1000, "Review is too long"),
+  rating: z
+    .number()
+    .int()
+    .min(1, "Rating must be at least 1")
+    .max(5, "Rating cannot exceed 5"),
+  text: z
+    .string()
+    .min(2, "Review text must be at least 2 characters")
+    .max(1000, "Review is too long"),
 });
 
 export async function POST(
@@ -42,25 +51,64 @@ export async function POST(
 
     await connectDB();
 
-    // Verify purchase integrity: Must have a delivered order for this goat
-    const order = await Order.findOne({
-      goat: id,
-      customer: user.id,
-      status: "delivered",
-    });
+    // Verify purchase integrity & prevent duplicate reviews with atomic lock
+    // Atomically claim the delivered order for review
+    const order = await Order.findOneAndUpdate(
+      {
+        goat: new mongoose.Types.ObjectId(id),
+        customer: new mongoose.Types.ObjectId(user.id),
+        status: "delivered",
+        reviewed: { $ne: true },
+      },
+      {
+        $set: { reviewed: true },
+      },
+      { new: true }
+    );
 
     if (!order) {
-      return forbiddenResponse("Only verified customers with delivered orders can submit a review");
+      // Check existing order details for clear and descriptive error feedback
+      const existingOrder = await Order.findOne({
+        goat: new mongoose.Types.ObjectId(id),
+        customer: new mongoose.Types.ObjectId(user.id),
+      });
+
+      if (!existingOrder) {
+        return forbiddenResponse(
+          "Only verified customers who purchased this goat can submit a review"
+        );
+      }
+
+      if (existingOrder.status !== "delivered") {
+        return forbiddenResponse(
+          "You can only review this goat after it has been delivered"
+        );
+      }
+
+      if (existingOrder.reviewed) {
+        return NextResponse.json(
+          { success: false, error: "You have already reviewed this goat" },
+          { status: 409 }
+        );
+      }
+
+      return forbiddenResponse(
+        "Only verified customers with delivered orders can submit a review"
+      );
     }
 
     const goat = await Goat.findById(id);
     if (!goat) {
+      // Revert order reviewed status if goat document does not exist
+      await Order.findByIdAndUpdate(order._id, { $set: { reviewed: false } });
       return notFoundResponse("Goat not found");
     }
 
-    // Check if user already reviewed
-    const alreadyReviewed = goat.reviews.some((r) => r.user.toString() === user.id);
-    if (alreadyReviewed) {
+    // Defensive check: verify user hasn't already reviewed in goat.reviews
+    const alreadyReviewedInGoat = goat.reviews?.some(
+      (r) => r.user && r.user.toString() === user.id
+    );
+    if (alreadyReviewedInGoat) {
       return NextResponse.json(
         { success: false, error: "You have already reviewed this goat" },
         { status: 409 }
@@ -69,25 +117,72 @@ export async function POST(
 
     const sanitizedText = sanitizeString(text);
 
+    if (!Array.isArray(goat.reviews)) {
+      goat.reviews = [];
+    }
+
     goat.reviews.push({
-      user: user.id as any,
-      userName: user.name,
+      user: new mongoose.Types.ObjectId(user.id) as any,
+      userName: user.name || "Customer",
       userAvatar: user.avatar || "",
       rating,
       text: sanitizedText,
       createdAt: new Date(),
     });
 
-    const totalScore = goat.reviews.reduce((acc, r) => acc + r.rating, 0);
+    const totalScore = goat.reviews.reduce((acc, r) => acc + (r.rating || 0), 0);
     goat.averageRating = Math.round((totalScore / goat.reviews.length) * 10) / 10;
     goat.totalReviews = goat.reviews.length;
-    await goat.save();
 
-    await Order.findByIdAndUpdate(order._id, { reviewed: true });
+    // Aggregate seller ratings across ALL goats belonging to this seller
+    const sellerId = order.seller || goat.seller;
+    if (sellerId) {
+      const sellerIdStr = sellerId.toString();
+      const sellerGoats = await Goat.find({
+        seller: {
+          $in: [new mongoose.Types.ObjectId(sellerIdStr), sellerIdStr],
+        },
+      })
+        .select("reviews")
+        .lean();
+
+      let totalRating = 0;
+      let count = 0;
+
+      for (const g of sellerGoats) {
+        if (Array.isArray(g.reviews)) {
+          for (const r of g.reviews) {
+            if (typeof r.rating === "number" && r.rating >= 1 && r.rating <= 5) {
+              totalRating += r.rating;
+              count++;
+            }
+          }
+        }
+      }
+
+      const avgSellerRating =
+        count > 0 ? Number((totalRating / count).toFixed(2)) : 0;
+
+      await User.findByIdAndUpdate(sellerIdStr, {
+        $set: {
+          "sellerProfile.rating": avgSellerRating,
+          "sellerProfile.totalReviews": count,
+        },
+      });
+
+      goat.sellerRating = avgSellerRating;
+      goat.sellerReviews = count;
+    }
+
+    await goat.save();
 
     return NextResponse.json({
       success: true,
       message: "Review submitted successfully!",
+      data: {
+        averageRating: goat.averageRating,
+        totalReviews: goat.totalReviews,
+      },
     });
   } catch (error) {
     console.error("Submit review error:", error);

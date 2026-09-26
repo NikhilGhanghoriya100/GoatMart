@@ -7,18 +7,42 @@
  */
 
 /**
+ * Safe parser for commission rate configuration.
+ * Validates that rate is numeric, finite, non-negative, and <= 100%.
+ * Rejects NaN, negative numbers, Infinity, and non-numeric strings.
+ */
+export function parseCommissionRate(value: unknown, defaultRate: number = 0): number {
+  if (value === undefined || value === null || value === "") {
+    return defaultRate;
+  }
+  const num = typeof value === "number" ? value : Number(String(value).trim());
+  if (isNaN(num) || !isFinite(num) || num < 0 || num > 100) {
+    console.warn(`[CommissionConfig Warning]: Invalid commission rate "${value}". Reverting to default ${defaultRate}%.`);
+    return defaultRate;
+  }
+  return Number(num.toFixed(2));
+}
+
+/**
  * Authoritative platform commission configuration for GoatMart.
- * Normal Sale: 2.0% = 200 basis points (1 bps = 0.01% = 0.0001) ONLY on goat price.
- * Delivery: 0.0% commission (100% of delivery charge goes to seller).
- * Cancellation Refund: 3.5% = 350 basis points on TOTAL customer payment.
+ * Active default: 0.0% Buyer Platform Fee, 0.0% Seller Platform Commission.
+ * Can be configured via server-side environment variables without code rewrites (e.g. 0, 2, 3).
  * 
- * IMPORTANT: This configuration is ONLY applied when creating NEW orders / processing cancellations.
+ * IMPORTANT: This configuration is ONLY applied when creating NEW orders.
  * Historical orders permanently store their immutable snapshot in MongoDB.
  */
-export const PLATFORM_COMMISSION_BPS = 200; // 2.0% (200 / 10,000)
-export const PLATFORM_COMMISSION_RATE = 2.0;
-export const BUYER_PLATFORM_FEE_BPS = 200; // 2.0% (200 / 10,000) ONLY on goat price
-export const BUYER_PLATFORM_FEE_RATE = 2.0;
+export const PLATFORM_COMMISSION_RATE: number = parseCommissionRate(
+  typeof process !== "undefined" ? process.env.PLATFORM_COMMISSION_RATE : undefined,
+  0.0
+);
+export const PLATFORM_COMMISSION_BPS: number = Math.round(PLATFORM_COMMISSION_RATE * 100);
+
+export const BUYER_PLATFORM_FEE_RATE: number = parseCommissionRate(
+  typeof process !== "undefined" ? process.env.BUYER_PLATFORM_FEE_RATE : undefined,
+  0.0
+);
+export const BUYER_PLATFORM_FEE_BPS: number = Math.round(BUYER_PLATFORM_FEE_RATE * 100);
+
 export const REFUND_COMMISSION_BPS = 350; // 3.5% (350 / 10,000)
 export const REFUND_COMMISSION_RATE = 3.5;
 export const FINANCIAL_CALCULATION_VERSION = "1.0";
@@ -336,8 +360,11 @@ export function calculateListingFeeEstimate(
  */
 export function formatCurrencyINR(amount: number): string {
   if (isNaN(amount) || !isFinite(amount)) return "₹0";
-  return "₹" + amount.toLocaleString("en-IN", {
-    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+  const isNegative = amount < 0;
+  const absAmount = Math.abs(amount);
+  const formatted = absAmount.toLocaleString("en-IN", {
+    minimumFractionDigits: Number.isInteger(absAmount) ? 0 : 2,
     maximumFractionDigits: 2,
   });
+  return (isNegative ? "-₹" : "₹") + formatted;
 }

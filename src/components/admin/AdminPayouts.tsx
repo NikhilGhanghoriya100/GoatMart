@@ -106,6 +106,7 @@ export default function AdminPayouts() {
   // Modal State for Manual Payout
   const [confirmModalOrder, setConfirmModalOrder] = useState<PayoutItem | null>(null);
   const [payoutMethod, setPayoutMethod] = useState<"UPI" | "BANK">("UPI");
+  const [payoutAmount, setPayoutAmount] = useState<string>("");
   const [utrNumber, setUtrNumber] = useState("");
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [adminNote, setAdminNote] = useState("");
@@ -161,6 +162,7 @@ export default function AdminPayouts() {
     setConfirmModalOrder(item);
     const prefMethod = item.seller.paymentDetails?.paymentMethod === "BANK" ? "BANK" : "UPI";
     setPayoutMethod(prefMethod);
+    setPayoutAmount(String(item.sellerNetPayable ?? ""));
     setUtrNumber("");
     setPaymentDate(new Date().toISOString().split("T")[0]);
     setAdminNote("");
@@ -168,6 +170,12 @@ export default function AdminPayouts() {
 
   const handleRecordManualPayout = async () => {
     if (!confirmModalOrder) return;
+
+    const parsedAmount = Number(payoutAmount);
+    if (isNaN(parsedAmount) || !isFinite(parsedAmount) || parsedAmount <= 0) {
+      toast.error("Please enter a valid positive payout amount.");
+      return;
+    }
 
     if (!utrNumber.trim()) {
       toast.error("Transaction Reference / UTR ID is required for manual payout verification.");
@@ -178,18 +186,19 @@ export default function AdminPayouts() {
     try {
       const res = await axios.post("/api/admin/payouts", {
         orderId: confirmModalOrder.id,
-        amount: confirmModalOrder.sellerNetPayable,
+        amount: parsedAmount,
         payoutMethod,
         referenceId: utrNumber.trim(),
         utrNumber: utrNumber.trim(),
         paymentDate,
+        adminNote: adminNote.trim() || undefined,
         note: adminNote.trim() || undefined,
         isManual: true,
       });
 
       if (res.data.success) {
         toast.success(
-          `Manual payout of ${formatCurrencyINR(confirmModalOrder.sellerNetPayable)} successfully recorded!`
+          `Manual payout of ${formatCurrencyINR(parsedAmount)} successfully recorded!`
         );
         setConfirmModalOrder(null);
         await fetchPayouts();
@@ -897,10 +906,10 @@ export default function AdminPayouts() {
                 )}
               </div>
 
-              {/* Authoritative Net Payable */}
-              <div className="border-t border-[#282828] pt-2 flex justify-between items-center">
-                <span className="text-sm font-bold text-white">Authoritative Payout Amount:</span>
-                <span className="text-base font-bold text-[#c8a96e] font-mono">
+              {/* Estimated Seller Net Payable */}
+              <div className="border-t border-[#282828] pt-2 flex justify-between items-center text-xs">
+                <span className="font-semibold text-gray-400">Estimated Seller Payable:</span>
+                <span className="font-bold text-gray-300 font-mono">
                   {formatCurrencyINR(confirmModalOrder.sellerNetPayable)}
                 </span>
               </div>
@@ -908,6 +917,34 @@ export default function AdminPayouts() {
 
             {/* Form Inputs */}
             <div className="space-y-3 font-sans text-xs">
+              {/* Actual Payout Amount Input */}
+              <div>
+                <label className="text-gray-200 font-bold block mb-1 flex items-center justify-between">
+                  <span>Actual Payout Amount (₹) *</span>
+                  <span className="text-[10px] text-amber-400 font-normal">
+                    {Number(payoutAmount) !== confirmModalOrder.sellerNetPayable && Number(payoutAmount) > 0
+                      ? `Adjustment: ${Number(payoutAmount) > confirmModalOrder.sellerNetPayable ? "+" : ""}${formatCurrencyINR(Number(payoutAmount) - confirmModalOrder.sellerNetPayable)}`
+                      : "Matches estimate"}
+                  </span>
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-2.5 text-gray-400 font-mono text-xs">₹</span>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0.01"
+                    required
+                    value={payoutAmount}
+                    onChange={(e) => setPayoutAmount(e.target.value)}
+                    placeholder="e.g. 19500"
+                    className="w-full pl-8 pr-3.5 py-2.5 rounded-xl bg-[#111] border border-[#333] text-emerald-400 font-bold text-sm font-mono placeholder-gray-500 focus:outline-none focus:border-[#c8a96e]"
+                  />
+                </div>
+                <span className="text-[10px] text-gray-500 mt-1 block">
+                  Enter the actual amount disbursed to the seller. This will reflect as realized seller earnings.
+                </span>
+              </div>
+
               <div>
                 <label className="text-gray-300 font-bold block mb-1">
                   Payment Method *

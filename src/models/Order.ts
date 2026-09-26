@@ -41,6 +41,7 @@ export interface IOrder extends Document {
   sellerBasePrice?: number;
   deliveryCharge?: number;
   buyerPlatformFee?: number;
+  buyerPlatformFeeRate?: number;
   sellerDeliveryAmount?: number;
   sellerGoatNet?: number;
   commissionRate?: number;
@@ -183,6 +184,7 @@ const OrderSchema = new Schema<IOrder>(
     sellerBasePrice: { type: Number },
     deliveryCharge: { type: Number, default: 0 },
     buyerPlatformFee: { type: Number, default: 0 },
+    buyerPlatformFeeRate: { type: Number, default: 0 },
     sellerDeliveryAmount: { type: Number, default: 0 },
     sellerGoatNet: { type: Number },
     commissionRate: { type: Number },

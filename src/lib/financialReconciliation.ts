@@ -8,7 +8,7 @@ export interface DiscrepancyItem {
   field: string;
   expected: any;
   actual: any;
-  severity: "error" | "warning";
+  severity: "error" | "warning" | "info";
   message: string;
 }
 
@@ -222,7 +222,7 @@ export async function reconcileSingleOrder(
 
   // 5. Seller Payout Consistency Checks
   const payoutStatus = order.payout?.status;
-  const payoutTransferId = order.payout?.transferId;
+  const payoutTransferId = order.payout?.transferId || order.payout?.referenceId || order.payout?.utrNumber;
   const payoutAmount = order.payout?.amount;
 
   if (payoutStatus === "paid") {
@@ -249,21 +249,33 @@ export async function reconcileSingleOrder(
     if (!payoutTransferId) {
       discrepancies.push({
         field: "payout.transferId",
-        expected: "valid_transfer_id",
+        expected: "valid_transfer_id_or_reference",
         actual: null,
         severity: "error",
-        message: "Seller payout is marked 'paid' but lacks a provider transferId reference",
+        message: "Seller payout is marked 'paid' but lacks a provider transferId or referenceId",
       });
     }
 
-    if (typeof payoutAmount === "number" && Math.abs(payoutAmount - sellerNetPayable) > 0.05) {
-      discrepancies.push({
-        field: "payout.amount",
-        expected: sellerNetPayable,
-        actual: payoutAmount,
-        severity: "error",
-        message: `Payout amount (₹${payoutAmount}) does not match authoritative sellerNetPayable (₹${sellerNetPayable})`,
-      });
+    if (typeof payoutAmount === "number") {
+      if (payoutAmount <= 0) {
+        discrepancies.push({
+          field: "payout.amount",
+          expected: "> 0",
+          actual: payoutAmount,
+          severity: "error",
+          message: `Payout amount must be greater than zero (found: ₹${payoutAmount})`,
+        });
+      } else if (Math.abs(payoutAmount - sellerNetPayable) > 0.05) {
+        // Legitimate admin settlement adjustment (not a broken payout)
+        const delta = Number((payoutAmount - sellerNetPayable).toFixed(2));
+        discrepancies.push({
+          field: "payout.settlementAdjustment",
+          expected: sellerNetPayable,
+          actual: payoutAmount,
+          severity: "info",
+          message: `Settlement adjustment: disbursed amount is ₹${payoutAmount} (${delta >= 0 ? "+" : ""}${delta} delta vs estimated payable ₹${sellerNetPayable})`,
+        });
+      }
     }
   }
 

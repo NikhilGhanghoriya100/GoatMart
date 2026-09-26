@@ -747,17 +747,19 @@ export async function recordManualOrderPayout(
     };
   }
 
-  // Authoritative amount validation: paid amount must match sellerNetPayable to the exact paise
-  const authoritativePaise = Math.round(order.sellerNetPayable * 100);
-  const providedPaise = Math.round(Number(amount) * 100);
-
-  if (authoritativePaise !== providedPaise) {
+  // Validate admin-provided actual payout amount: must be a finite, positive number (> 0)
+  const numericAmount = Number(amount);
+  if (isNaN(numericAmount) || !isFinite(numericAmount) || numericAmount <= 0) {
     return {
       success: false,
-      code: "AMOUNT_MISMATCH",
-      error: `Paid amount (₹${amount}) does not match authoritative seller payable amount (₹${order.sellerNetPayable}). Arbitrary amounts are not allowed.`,
+      code: "INVALID_PAYOUT_AMOUNT",
+      error: `Invalid payout amount (₹${amount}). Amount must be a positive number.`,
     };
   }
+
+  // Integer-paise precision to eliminate floating-point drift
+  const actualPaidPaise = Math.round(numericAmount * 100);
+  const actualPaidAmount = actualPaidPaise / 100;
 
   // Idempotency: cannot pay an already paid order
   if (order.payout?.status === "paid") {
@@ -791,7 +793,7 @@ export async function recordManualOrderPayout(
         "payout.referenceId": cleanReference,
         "payout.utrNumber": cleanReference,
         "payout.transferId": cleanReference,
-        "payout.amount": order.sellerNetPayable,
+        "payout.amount": actualPaidAmount,
         "payout.currency": order.currency || "INR",
         "payout.paidAt": paymentDate,
         "payout.processedAt": paymentDate,
@@ -828,7 +830,7 @@ export async function recordManualOrderPayout(
     actorId: performedBy,
     actorRole: "admin",
     actorName: performedByName,
-    amount: order.sellerNetPayable,
+    amount: actualPaidAmount,
     currency: order.currency || "INR",
     previousState: order.payout?.status || "unpaid",
     newState: "paid",
@@ -842,17 +844,19 @@ export async function recordManualOrderPayout(
       sellerId: order.seller.toString(),
       sellerName: order.sellerName,
       sellerNetPayable: order.sellerNetPayable,
+      actualPaidAmount,
+      difference: Number((actualPaidAmount - order.sellerNetPayable).toFixed(2)),
       adminNote,
     },
   });
 
   return {
     success: true,
-    message: `Manual payout of ₹${order.sellerNetPayable.toLocaleString("en-IN")} recorded successfully (${payoutMethod}: ${cleanReference})`,
+    message: `Manual payout of ₹${actualPaidAmount.toLocaleString("en-IN")} recorded successfully (${payoutMethod}: ${cleanReference})`,
     order: updatedOrder,
     status: "paid",
     referenceId: cleanReference,
-    amount: order.sellerNetPayable,
+    amount: actualPaidAmount,
     paidAt: paymentDate,
   };
 }

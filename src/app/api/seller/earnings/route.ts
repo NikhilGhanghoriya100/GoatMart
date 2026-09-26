@@ -29,21 +29,21 @@ export async function GET(_req: NextRequest) {
     // Authoritative seller identity derived strictly from session
     const sellerId = user.id;
 
-    // Strict criteria for completed sales contributing to seller earnings:
+    // Strict criteria for realized seller earnings:
     // 1. Order belongs to this authenticated seller
-    // 2. Payment is confirmed and paid
+    // 2. Seller payout has been completed and marked as "paid" by admin
     // 3. Order is not cancelled or refunded
     const query = {
       seller: sellerId,
-      "payment.status": "paid",
+      "payout.status": "paid",
       status: { $nin: ["cancelled", "refunded"] },
     };
 
-    const paidOrders = await Order.find(query)
+    const settledOrders = await Order.find(query)
       .select(
-        "orderId goat goatName goatBreed goatImage createdAt status payment.status payment.paidAt payment.razorpayPaymentId sellerBasePrice commissionRate commissionAmount sellerNetPayable currency financialCalculationVersion financialCalculatedAt amount"
+        "orderId goat goatName goatBreed goatImage createdAt status payment.status payment.paidAt payment.razorpayPaymentId sellerBasePrice commissionRate commissionAmount sellerNetPayable payout currency financialCalculationVersion financialCalculatedAt amount"
       )
-      .sort({ "payment.paidAt": -1, createdAt: -1 })
+      .sort({ "payout.paidAt": -1, createdAt: -1 })
       .lean();
 
     // Deterministic integer-paise aggregation to avoid floating-point drift
@@ -51,20 +51,24 @@ export async function GET(_req: NextRequest) {
     let totalCommissionPaise = 0;
     let totalNetEarningsPaise = 0;
 
-    const sales = paidOrders.map((o: any) => {
+    const sales = settledOrders.map((o: any) => {
       // Use stored immutable financial snapshot fields
       const basePrice =
         typeof o.sellerBasePrice === "number" ? o.sellerBasePrice : Number(o.amount) || 0;
       const commission =
         typeof o.commissionAmount === "number" ? o.commissionAmount : 0;
-      const netPayable =
-        typeof o.sellerNetPayable === "number"
+      
+      // Actual settled amount paid to seller by admin (fallback to sellerNetPayable only for legitimately paid payouts)
+      const settledAmount =
+        typeof o.payout?.amount === "number"
+          ? o.payout.amount
+          : typeof o.sellerNetPayable === "number"
           ? o.sellerNetPayable
           : basePrice - commission;
 
       totalSalesPaise += Math.round(basePrice * 100);
       totalCommissionPaise += Math.round(commission * 100);
-      totalNetEarningsPaise += Math.round(netPayable * 100);
+      totalNetEarningsPaise += Math.round(settledAmount * 100);
 
       return {
         id: o._id.toString(),
@@ -73,14 +77,18 @@ export async function GET(_req: NextRequest) {
         goatName: o.goatName || "Goat Listing",
         goatBreed: o.goatBreed || "Standard",
         goatImage: o.goatImage || "",
-        saleDate: o.payment?.paidAt || o.createdAt,
+        saleDate: o.payout?.paidAt || o.payment?.paidAt || o.createdAt,
         sellerBasePrice: basePrice,
         commissionRate: typeof o.commissionRate === "number" ? o.commissionRate : PLATFORM_COMMISSION_RATE,
         commissionAmount: commission,
-        sellerNetPayable: netPayable,
+        sellerNetPayable: settledAmount,
         currency: o.currency || "INR",
         paymentId: o.payment?.razorpayPaymentId || "",
         orderStatus: o.status,
+        payoutStatus: o.payout?.status || "paid",
+        payoutAmount: settledAmount,
+        payoutReference: o.payout?.referenceId || o.payout?.utrNumber || o.payout?.transferId || "",
+        payoutPaidAt: o.payout?.paidAt || null,
       };
     });
 

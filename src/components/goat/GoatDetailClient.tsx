@@ -691,6 +691,7 @@ import toast from "react-hot-toast";
 import axios from "axios";
 import CheckoutModal from "@/components/payment/CheckoutModal";
 import ReviewSection from "@/components/goat/ReviewSection";
+import GoatCard from "@/components/GoatCard";
 import { useStore } from "@/store/useStore";
 import { useTranslation } from "@/hooks/useTranslation";
 import { fmt } from "@/lib/utils";
@@ -698,11 +699,34 @@ import type { Goat } from "@/types";
 
 import { shareGoat } from "@/lib/shareGoat";
 
-export default function GoatDetailClient({ goat }: { goat: Goat }) {
+export interface SellerStats {
+  rating: number;
+  totalReviews: number;
+  goatsSold: number;
+}
+
+export default function GoatDetailClient({
+  goat,
+  recommendedGoats = [],
+  buyerFeeRate = 0,
+  sellerStats,
+}: {
+  goat: Goat;
+  recommendedGoats?: Goat[];
+  buyerFeeRate?: number;
+  sellerStats?: SellerStats;
+}) {
   const { data: session } = useSession();
   const router = useRouter();
   const { wishlist, toggleWishlist } = useStore();
   const { t, translateBreed, isHindi } = useTranslation();
+
+  const activeSellerStats: SellerStats = sellerStats || {
+    rating: typeof goat.sellerRating === "number" ? goat.sellerRating : 0,
+    totalReviews:
+      typeof goat.sellerReviews === "number" ? goat.sellerReviews : 0,
+    goatsSold: 0,
+  };
 
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [wishLoading, setWishLoading] = useState(false);
@@ -1035,16 +1059,6 @@ export default function GoatDetailClient({ goat }: { goat: Goat }) {
                   : "(Inclusive of Direct Buyer Protection & Health Cert)"}
               </span>
             </div>
-
-            <div className="flex items-center gap-2 pt-1 text-xs font-sans">
-              <span className="font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5">
-                🚚 {goat.deliveryCharge && goat.deliveryCharge > 0
-                  ? `+ ${fmt(goat.deliveryCharge)} ${isHindi ? "डिलीवरी शुल्क" : "Delivery Fee"}`
-                  : isHindi
-                  ? "मुफ़्त डिलीवरी (Free Delivery)"
-                  : "Free Delivery"}
-              </span>
-            </div>
           </div>
 
           {/* Specifications */}
@@ -1173,22 +1187,69 @@ export default function GoatDetailClient({ goat }: { goat: Goat }) {
                       : "Verified Indian Livestock Farm")}
                 </p>
 
-                <div className="flex items-center gap-2 mt-1 text-xs text-zinc-600 dark:text-zinc-300 font-sans">
-                  <div className="flex text-amber-400">
-                    {[1, 2, 3, 4, 5].map((i) => (
-                      <Star key={i} size={12} className="fill-current" />
-                    ))}
+                {activeSellerStats.totalReviews > 0 ? (
+                  <div className="flex items-center gap-2 mt-1 text-xs text-zinc-600 dark:text-zinc-300 font-sans flex-wrap">
+                    <div className="flex text-amber-400">
+                      {[1, 2, 3, 4, 5].map((i) => (
+                        <Star
+                          key={i}
+                          size={12}
+                          className={
+                            i <= Math.round(activeSellerStats.rating)
+                              ? "fill-current text-amber-400"
+                              : "text-zinc-300 dark:text-zinc-700"
+                          }
+                        />
+                      ))}
+                    </div>
+
+                    <span className="font-bold text-zinc-900 dark:text-zinc-100">
+                      {activeSellerStats.rating.toFixed(1)}
+                    </span>
+
+                    <span className="text-zinc-400 dark:text-zinc-500">
+                      ({activeSellerStats.totalReviews}{" "}
+                      {isHindi
+                        ? "रिव्यू"
+                        : activeSellerStats.totalReviews === 1
+                        ? "review"
+                        : "reviews"}
+                      )
+                    </span>
+
+                    <span className="text-zinc-300 dark:text-zinc-700">•</span>
+
+                    <span className="text-zinc-600 dark:text-zinc-400 font-medium">
+                      🐐 {activeSellerStats.goatsSold}{" "}
+                      {isHindi
+                        ? "बकरे बिके"
+                        : activeSellerStats.goatsSold === 1
+                        ? "Goat Sold"
+                        : "Goats Sold"}
+                    </span>
                   </div>
+                ) : (
+                  <div className="flex items-center gap-2 mt-1 text-xs text-zinc-600 dark:text-zinc-300 font-sans flex-wrap">
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 font-bold text-[11px] border border-emerald-200 dark:border-emerald-800">
+                      {isHindi ? "नया विक्रेता" : "New Seller"}
+                    </span>
 
-                  <span className="font-bold">
-                    {goat.sellerRating || "4.9"}
-                  </span>
+                    <span className="text-zinc-400 dark:text-zinc-500">
+                      0 {isHindi ? "रिव्यू" : "Reviews"}
+                    </span>
 
-                  <span className="text-zinc-400">
-                    ({goat.sellerReviews || "12"}{" "}
-                    {isHindi ? "ऑर्डर" : "orders"})
-                  </span>
-                </div>
+                    <span className="text-zinc-300 dark:text-zinc-700">•</span>
+
+                    <span className="text-zinc-600 dark:text-zinc-400 font-medium">
+                      🐐 {activeSellerStats.goatsSold}{" "}
+                      {isHindi
+                        ? "बकरे बिके"
+                        : activeSellerStats.goatsSold === 1
+                        ? "Goat Sold"
+                        : "Goats Sold"}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1289,11 +1350,37 @@ export default function GoatDetailClient({ goat }: { goat: Goat }) {
         />
       </div>
 
+      {/* Recommended Goats Section */}
+      {recommendedGoats && recommendedGoats.length > 0 && (
+        <section className="mt-16 pt-10 border-t border-zinc-200 dark:border-zinc-800">
+          <div className="flex items-center justify-between gap-4 mb-6">
+            <h2 className="text-xl sm:text-2xl font-black font-serif text-zinc-950 dark:text-white">
+              🐐 {isHindi ? `अनुशंसित ${translateBreed(goat.breed)} बकरे` : `Recommended ${goat.breed} Goats`}
+            </h2>
+
+            <Link
+              href={`/shop?breed=${encodeURIComponent(goat.breed)}`}
+              className="text-xs sm:text-sm font-bold text-amber-800 dark:text-amber-400 hover:text-amber-900 dark:hover:text-amber-300 transition-colors font-sans flex items-center gap-1 flex-shrink-0"
+            >
+              <span>{isHindi ? "सभी देखें" : "View All"}</span>
+              <span>→</span>
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
+            {recommendedGoats.slice(0, 10).map((recGoat) => (
+              <GoatCard key={recGoat._id} goat={recGoat} />
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Checkout Modal */}
       {checkoutOpen && (
         <CheckoutModal
           goat={goat}
           onClose={() => setCheckoutOpen(false)}
+          buyerFeeRate={buyerFeeRate}
         />
       )}
     </div>

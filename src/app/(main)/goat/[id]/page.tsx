@@ -1,11 +1,15 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
+import mongoose from "mongoose";
 import connectDB from "@/lib/db";
 import Goat from "@/models/Goat";
+import User from "@/models/User";
+import Order from "@/models/Order";
 import { isValidObjectId } from "@/lib/security";
 import GoatDetailClient from "@/components/goat/GoatDetailClient";
 import type { Goat as GoatType } from "@/types";
+import { BUYER_PLATFORM_FEE_RATE } from "@/lib/commission";
 import {
   getBaseUrl,
   getGoatProductUrl,
@@ -62,6 +66,62 @@ async function getGoatForPage(id: string) {
     { new: true }
   ).lean();
   return goat;
+}
+
+async function getRecommendedGoats(currentGoatId: string, breed: string) {
+  if (!isValidObjectId(currentGoatId)) {
+    return [];
+  }
+  try {
+    await connectDB();
+    const goats = await Goat.find({
+      _id: { $ne: new mongoose.Types.ObjectId(currentGoatId) },
+      breed: breed,
+      status: { $nin: ["sold", "Sold", "SOLD", "reserved", "Reserved"] },
+    })
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .lean();
+
+    return goats || [];
+  } catch (error) {
+    console.error("Fetch recommended goats error:", error);
+    return [];
+  }
+}
+
+async function getSellerStats(sellerId: unknown) {
+  if (!sellerId) {
+    return { rating: 0, totalReviews: 0, goatsSold: 0 };
+  }
+  const sellerIdStr = sellerId.toString();
+  if (!isValidObjectId(sellerIdStr)) {
+    return { rating: 0, totalReviews: 0, goatsSold: 0 };
+  }
+  try {
+    await connectDB();
+    const sellerObjId = new mongoose.Types.ObjectId(sellerIdStr);
+    const [sellerUser, goatsSold] = await Promise.all([
+      User.findById(sellerIdStr).select("sellerProfile").lean(),
+      Order.countDocuments({
+        seller: { $in: [sellerObjId, sellerIdStr] },
+        "payment.status": "paid",
+        status: { $nin: ["cancelled", "refunded"] },
+      }),
+    ]);
+
+    const rating = sellerUser?.sellerProfile?.rating ?? 0;
+    const totalReviews = sellerUser?.sellerProfile?.totalReviews ?? 0;
+
+    return {
+      rating: Number(rating.toFixed(1)),
+      totalReviews,
+      goatsSold,
+    };
+  } catch (error) {
+    console.error("Fetch seller stats error:", error);
+    return { rating: 0, totalReviews: 0, goatsSold: 0 };
+  }
 }
 
 export async function generateMetadata({
@@ -136,6 +196,17 @@ export default async function GoatPage({
 
   // Serialize to plain JSON object for the interactive Client Component
   const serializedGoat: GoatType = JSON.parse(JSON.stringify(goat));
+  const [recommendedGoats, sellerStats] = await Promise.all([
+    getRecommendedGoats(id, goat.breed),
+    getSellerStats(goat.seller),
+  ]);
 
-  return <GoatDetailClient goat={serializedGoat} />;
+  return (
+    <GoatDetailClient
+      goat={serializedGoat}
+      recommendedGoats={JSON.parse(JSON.stringify(recommendedGoats))}
+      buyerFeeRate={BUYER_PLATFORM_FEE_RATE}
+      sellerStats={sellerStats}
+    />
+  );
 }

@@ -2340,26 +2340,27 @@ export default function SellerDashboard() {
     }
   };
 
-  const paidOrders = orders.filter(
+  // Realized Revenue strictly counts orders settled and paid by admin
+  const settledOrders = orders.filter(
     (o) =>
-      o.payment?.status === "paid" ||
-      o.status === "delivered" ||
-      o.status === "payment_confirmed"
+      o.payout?.status === "paid" &&
+      o.status !== "cancelled" &&
+      o.status !== "refunded"
   );
 
-  const totalRevenue = paidOrders.reduce(
-    (acc, o) =>
+  const totalRevenue = settledOrders.reduce(
+    (acc: number, o: any) =>
       acc +
-      (typeof o.sellerNetPayable === "number"
+      (typeof o.payout?.amount === "number"
+        ? o.payout.amount
+        : typeof o.sellerNetPayable === "number"
         ? o.sellerNetPayable
-        : typeof o.amount === "number"
-        ? o.amount * 0.98
         : 0),
     0
   );
 
-  const totalGoatNet = paidOrders.reduce(
-    (acc, o) =>
+  const totalGoatNet = settledOrders.reduce(
+    (acc: number, o: any) =>
       acc +
       (typeof o.sellerGoatNet === "number"
         ? o.sellerGoatNet
@@ -2369,8 +2370,8 @@ export default function SellerDashboard() {
     0
   );
 
-  const totalDeliveryRevenue = paidOrders.reduce(
-    (acc, o) =>
+  const totalDeliveryRevenue = settledOrders.reduce(
+    (acc: number, o: any) =>
       acc +
       (typeof o.sellerDeliveryAmount === "number"
         ? o.sellerDeliveryAmount
@@ -3643,8 +3644,8 @@ export default function SellerDashboard() {
                   </h2>
                   <p className="text-xs text-gray-400 font-sans mt-1">
                     {isHindi
-                      ? "GoatMart 2% पारदर्शी कमीशन कटौती के बाद आपकी कुल सत्यापित बिक्री और शुद्ध प्राप्य आय।"
-                      : "Authoritative financial breakdown of completed sales after GoatMart's transparent 2% commission."}
+                      ? "GoatMart पारदर्शी कमीशन कटौती के बाद आपकी कुल सत्यापित बिक्री और शुद्ध प्राप्य आय।"
+                      : "Authoritative financial breakdown of completed sales after GoatMart's transparent platform commission."}
                   </p>
                 </div>
 
@@ -3680,7 +3681,7 @@ export default function SellerDashboard() {
                 {/* 2. Platform Commission */}
                 <div className="rounded-2xl border border-zinc-800 bg-[#141414] p-5 relative overflow-hidden flex flex-col justify-between hover:border-zinc-700 transition-colors">
                   <div className="text-xs uppercase font-sans font-bold text-gray-400 mb-1">
-                    {isHindi ? "GoatMart कमीशन (2%)" : "GoatMart Fee (2%)"}
+                    {isHindi ? "GoatMart कमीशन" : "GoatMart Platform Fee"}
                   </div>
                   <div className="text-2xl sm:text-3xl font-bold text-amber-400/90 font-serif my-1">
                     {earningsLoading && !earningsData
@@ -3688,7 +3689,7 @@ export default function SellerDashboard() {
                       : `- ${formatCurrencyINR(earningsData?.summary.totalCommission || 0)}`}
                   </div>
                   <div className="text-[11px] text-gray-500 font-sans mt-1">
-                    {isHindi ? "2% पारदर्शी प्लेटफॉर्म शुल्क" : "2% transparent platform fee"}
+                    {isHindi ? "पारदर्शी प्लेटफॉर्म शुल्क" : "Transparent platform fee"}
                   </div>
                 </div>
 
@@ -3749,8 +3750,8 @@ export default function SellerDashboard() {
                     </h4>
                     <p className="text-xs text-gray-400 font-sans max-w-md mx-auto leading-relaxed">
                       {isHindi
-                        ? "जब कोई खरीदार आपकी बकरी के लिए ऑनलाइन भुगतान पूरा करता है, तो उसका 2% कमीशन और आपकी शुद्ध कमाई यहां स्वतः दिखाई देगी।"
-                        : "When a buyer completes checkout payment for your listed goat, the authoritative 2% commission breakdown and your net earnings will appear here."}
+                        ? "जब एडमिन द्वारा आपके पूर्ण किए गए ऑर्डर का पेआउट/निपटान पूरा कर दिया जाता है, तो आपकी शुद्ध प्राप्त कमाई यहां दिखाई देगी।"
+                        : "When admin completes and settles payout for your delivered orders, your authoritative settled earnings will appear here."}
                     </p>
                   </div>
                 )}
@@ -4606,65 +4607,6 @@ export default function SellerDashboard() {
                 />
               </div>
 
-              {/* Informational Platform Commission & Earnings Breakdown */}
-              <div className="rounded-2xl border border-zinc-800 bg-[#141414] p-3.5 sm:p-4 space-y-2 text-xs font-sans">
-                <div className="flex items-center justify-between text-gray-400">
-                  <span className="font-medium">
-                    {isHindi ? "बकरे का मूल मूल्य (Goat Price)" : "Goat Base Price"}
-                  </span>
-                  <span className="font-bold text-white font-mono text-sm">
-                    {formatCurrencyINR(listingEstimate.sellerBasePrice)}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between text-amber-400/90">
-                  <span>
-                    {isHindi
-                      ? `GoatMart प्लेटफॉर्म कमीशन (${listingEstimate.commissionRate}% - केवल बकरे पर)`
-                      : `GoatMart Platform Commission (${listingEstimate.commissionRate}% - Goat Only)`}
-                  </span>
-                  <span className="font-semibold font-mono text-xs">
-                    {listingEstimate.isValidPrice ? `- ${formatCurrencyINR(listingEstimate.estimatedCommission)}` : "₹0"}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between text-gray-300">
-                  <span>
-                    {isHindi ? "बकरे की शुद्ध कमाई (Goat Net)" : "Seller Goat Net"}
-                  </span>
-                  <span className="font-semibold font-mono text-xs">
-                    {formatCurrencyINR(listingEstimate.estimatedSellerGoatNet)}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between text-emerald-400">
-                  <span>
-                    {isHindi
-                      ? "डिलीवरी राजस्व (100% विक्रेता को, 0% कमीशन)"
-                      : "Delivery Revenue (100% to Seller, 0% fee)"}
-                  </span>
-                  <span className="font-semibold font-mono text-xs">
-                    +{formatCurrencyINR(listingEstimate.deliveryCharge)}
-                  </span>
-                </div>
-
-                <div className="flex items-center justify-between border-t border-zinc-800/80 pt-2 text-xs sm:text-sm">
-                  <span className="font-bold text-emerald-400">
-                    {isHindi
-                      ? "कुल अनुमानित विक्रेता शुद्ध आय (Total Net Payable)"
-                      : "Total Estimated Seller Net Amount"}
-                  </span>
-                  <span className="font-bold text-emerald-400 font-mono text-sm sm:text-base">
-                    {formatCurrencyINR(listingEstimate.estimatedSellerNet)}
-                  </span>
-                </div>
-
-                <p className="text-[11px] text-gray-500 pt-0.5 leading-relaxed">
-                  {isHindi
-                    ? "ℹ️ सूचना: 2% प्लेटफॉर्म कमीशन केवल बकरे की मूल कीमत पर लागू होता है। डिलीवरी शुल्क से कोई कमीशन नहीं काटा जाता।"
-                    : "ℹ️ Note: 2% platform commission applies only to the goat price. 0% commission is charged on delivery."}
-                </p>
-              </div>
 
               <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
 

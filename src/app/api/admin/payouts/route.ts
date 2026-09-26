@@ -257,7 +257,7 @@ export async function POST(req: NextRequest) {
         referenceId: body.referenceId || body.utrNumber,
         amount: body.amount !== undefined ? Number(body.amount) : 0,
         paidAt: body.paidAt,
-        adminNote: body.adminNote,
+        adminNote: body.adminNote || body.note,
       });
 
       if (!manualResult.success) {

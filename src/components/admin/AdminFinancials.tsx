@@ -163,7 +163,7 @@ export default function AdminFinancials() {
             <span>💰</span> Platform Financial Dashboard
           </h2>
           <p className="text-xs text-gray-400 mt-0.5">
-            Deterministic 2% commission engine • Immutable historical snapshots • Integer paise reconciliation
+            Deterministic platform commission engine • Immutable historical snapshots • Integer paise reconciliation
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -212,7 +212,7 @@ export default function AdminFinancials() {
             {formatCurrencyINR(summary?.totalCommission || 0)}
           </div>
           <div className="text-xs text-[#c8a96e]/80 uppercase tracking-wider font-sans font-medium">
-            GoatMart Commission (2%)
+            GoatMart Platform Commission
           </div>
           <div className="text-[11px] text-gray-500 mt-1">
             Authoritative platform commission revenue

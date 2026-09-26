@@ -61,7 +61,15 @@ const isUsableSavedDelivery = (f: DeliveryForm): boolean => {
   );
 };
 
-export default function CheckoutModal({ goat, onClose }: { goat: Goat; onClose: () => void }) {
+export default function CheckoutModal({
+  goat,
+  onClose,
+  buyerFeeRate = 0,
+}: {
+  goat: Goat;
+  onClose: () => void;
+  buyerFeeRate?: number;
+}) {
   const { data: session } = useSession();
   const router = useRouter();
   const { t, translateBreed, isHindi } = useTranslation();
@@ -78,7 +86,8 @@ export default function CheckoutModal({ goat, onClose }: { goat: Goat; onClose: 
     typeof (goat as any).deliveryCharge === "number" && (goat as any).deliveryCharge >= 0
       ? (goat as any).deliveryCharge
       : 0;
-  const buyerPlatformFee = Math.round((goat.price || 0) * 0.02);
+  const effectiveBuyerFeeRate = typeof buyerFeeRate === "number" && buyerFeeRate >= 0 ? buyerFeeRate : 0;
+  const buyerPlatformFee = Math.round(((goat.price || 0) * Math.round(effectiveBuyerFeeRate * 100)) / 10000);
   const totalAmount = (goat.price || 0) + deliveryCharge + buyerPlatformFee;
 
   // Preload customer address if available
@@ -466,7 +475,7 @@ export default function CheckoutModal({ goat, onClose }: { goat: Goat; onClose: 
                   </span>
                 </div>
                 <div className="flex justify-between text-xs text-gray-500 dark:text-zinc-400 font-sans">
-                  <span>{isHindi ? "प्लेटफ़ॉर्म शुल्क (2%)" : "Buyer Platform Fee (2%)"}:</span>
+                  <span>{isHindi ? `प्लेटफ़ॉर्म शुल्क (${effectiveBuyerFeeRate}%)` : `Buyer Platform Fee (${effectiveBuyerFeeRate}%)`}:</span>
                   <span className="font-medium text-amber-800 dark:text-amber-400">{fmt(buyerPlatformFee)}</span>
                 </div>
                 <div className="flex justify-between items-center pt-2 border-t border-dashed border-gray-200 dark:border-zinc-800">
@@ -638,7 +647,7 @@ export default function CheckoutModal({ goat, onClose }: { goat: Goat; onClose: 
                   </span>
                 </div>
                 <div className="flex justify-between text-xs text-gray-500 dark:text-zinc-400 font-sans">
-                  <span>{isHindi ? "प्लेटफ़ॉर्म शुल्क (2%)" : "Buyer Platform Fee (2%)"}:</span>
+                  <span>{isHindi ? `प्लेटफ़ॉर्म शुल्क (${effectiveBuyerFeeRate}%)` : `Buyer Platform Fee (${effectiveBuyerFeeRate}%)`}:</span>
                   <span className="font-medium text-amber-800 dark:text-amber-400">{fmt(buyerPlatformFee)}</span>
                 </div>
                 <div className="flex justify-between items-center pt-2 border-t border-dashed border-gray-200 dark:border-zinc-800">
