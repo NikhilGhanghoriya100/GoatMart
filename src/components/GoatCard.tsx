@@ -12,6 +12,7 @@ import { useStore } from "@/store/useStore";
 import { useTranslation } from "@/hooks/useTranslation";
 import { fmt } from "@/lib/utils";
 import type { Goat } from "@/types";
+import { shareGoat } from "@/lib/shareGoat";
 
 export default function GoatCard({ goat }: { goat: Goat }) {
   const { data: session } = useSession();
@@ -46,42 +47,9 @@ export default function GoatCard({ goat }: { goat: Goat }) {
   const handleShare = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    const url = `${typeof window !== "undefined" ? window.location.origin : ""}/goat/${goat._id}`;
-    const breedName = translateBreed(goat.breed);
-    const priceText = fmt(goat.price);
-    const locText = goat.sellerLoc ? `\n📍 स्थान: ${goat.sellerLoc}` : "";
-
-    const shareTitle = `🐐 GoatMart पर ${goat.name} — ${breedName}`;
-    const shareText =
-`🐐✨ GoatMart पर शानदार बकरा उपलब्ध है! ✨🐐
-
-🏆 ${goat.name} — शुद्ध ${breedName} नस्ल
-💰 कीमत: ${priceText}
-⚖️ वजन: ${goat.weight} किलोग्राम${locText}
-
-━━━━━━━━━━━━━━━━━━
-🌟 इस बकरे की खासियत
-━━━━━━━━━━━━━━━━━━
-✅ शुद्ध ${breedName} नस्ल
-🩺 पशु चिकित्सक द्वारा प्रमाणित
-📸 असली फोटो और वीडियो उपलब्ध
-💯 सीधे फार्म से खरीदारी
-🚚 पूरे भारत में सुरक्षित घर तक पहुँचाने की सुविधा
-🔒 भरोसेमंद खरीदारी के लिए GoatMart का सहयोग
-
-🔥 बेहतरीन नस्ल और शानदार वजन का यह बकरा आपके लिए उपलब्ध है!
-अगर आप अच्छी नस्ल, सही वजन और उचित कीमत वाला बकरा खरीदना चाहते हैं, तो इसकी पूरी जानकारी अभी देखें।
-
-👇 पूरी फोटो, वीडियो, नस्ल की जानकारी, कीमत और खरीदारी के लिए यहाँ क्लिक करें:
-🔗 ${url}
-
-🐐 GoatMart — आपकी पसंद का बकरा, अब आपके घर तक।`;
-
     try {
-      if (navigator.share) {
-        await navigator.share({ title: shareTitle, text: shareText, url });
-      } else {
-        await navigator.clipboard.writeText(shareText);
+      const result = await shareGoat(goat);
+      if (result === "copied") {
         toast.success(isHindi ? "शेयर लिंक कॉपी हो गया! अब कहीं भी भेजें 🐐" : t.shareCopied);
       }
     } catch {}

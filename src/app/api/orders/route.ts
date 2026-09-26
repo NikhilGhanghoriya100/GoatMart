@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import connectDB from "@/lib/db";
 import Order from "@/models/Order";
 import Goat from "@/models/Goat";
+import User from "@/models/User";
 import { createRazorpayOrder } from "@/lib/razorpay";
 import { calculateOrderFinancials } from "@/lib/commission";
 import {
@@ -151,6 +152,22 @@ export async function POST(req: NextRequest) {
         { s: "Delivered", d: "", done: false },
       ],
     });
+
+    // Express Checkout: Sync reusable delivery details to customer profile (non-blocking for order flow)
+    try {
+      await User.findByIdAndUpdate(user.id, {
+        $set: {
+          name: sanitizedDelivery.name,
+          phone: sanitizedDelivery.phone,
+          "address.street": sanitizedDelivery.address,
+          "address.city": sanitizedDelivery.city,
+          "address.state": sanitizedDelivery.state,
+          "address.pin": sanitizedDelivery.pin,
+        },
+      });
+    } catch (profileSyncError) {
+      console.warn("Express Checkout profile sync warning (order creation succeeded):", profileSyncError);
+    }
 
     // -------------------------------------------------------------------------
     // AUDIT: payment_initiated

@@ -259,6 +259,16 @@ export const translations = {
     proceedToPayment: "Proceed to Payment →",
     paymentSuccess: "Order Confirmed Successfully!",
     paymentSuccessSub: "The verified seller will prepare your livestock and arrange safe climate transport.",
+    savedDeliveryDetails: "Saved Delivery Details",
+    useSavedDetails: "Use Saved Details & Pay",
+    editDetails: "Edit Details",
+    keepSaved: "Cancel / Keep Saved Details",
+    deliveringTo: "Delivering To",
+    savingInfoBadge: "Your delivery details will be saved securely to your account for faster checkout next time.",
+    expressCheckout: "Express Checkout",
+    editingDeliveryDetails: "Edit Delivery Details",
+    proceedToPay: "Proceed to Pay",
+    loadingProfile: "Loading saved delivery details...",
 
     // Footer
     footerAbout: "GoatMart Certified Livestock",
@@ -523,6 +533,16 @@ export const translations = {
     proceedToPayment: "भुगतान के लिए आगे बढ़ें →",
     paymentSuccess: "ऑर्डर सफलतापूर्वक पुष्ट हुआ!",
     paymentSuccessSub: "सत्यापित विक्रेता आपके लाइवस्टॉक को तैयार कर सुरक्षित परिवहन की व्यवस्था करेगा।",
+    savedDeliveryDetails: "सुरक्षित सहेजा गया डिलीवरी पता",
+    useSavedDetails: "सहेजे गए विवरण से भुगतान करें",
+    editDetails: "विवरण बदलें",
+    keepSaved: "रद्द करें / सहेजा गया पता रखें",
+    deliveringTo: "डिलीवरी गंतव्य",
+    savingInfoBadge: "अगली बार त्वरित 1-क्लिक चेकआउट के लिए आपका डिलीवरी पता आपके खाते में सुरक्षित रूप से सहेज लिया जाएगा।",
+    expressCheckout: "एक्सप्रेस चेकआउट",
+    editingDeliveryDetails: "डिलीवरी विवरण बदलें",
+    proceedToPay: "भुगतान के लिए आगे बढ़ें",
+    loadingProfile: "सहेजे गए विवरण लोड हो रहे हैं...",
 
     // Footer
     footerAbout: "GoatMart प्रमाणित लाइवस्टॉक",
