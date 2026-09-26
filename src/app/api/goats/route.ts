@@ -39,6 +39,11 @@ const hindiBreedMap: Record<string, string> = {
   "सुरती": "Surti",
 };
 
+const goatImageSchema = z
+  .string()
+  .url("Image must be a valid HTTP/HTTPS URL")
+  .or(z.string().regex(/^data:image\//, "Legacy image data URI"));
+
 const createGoatSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters").max(100),
   breed: z.string().min(2, "Breed is required"),
@@ -50,7 +55,7 @@ const createGoatSchema = z.object({
   vaccinated: z.boolean().default(false),
   tag: z.string().max(50).optional().nullable(),
   desc: z.string().max(2000).optional().default(""),
-  images: z.array(z.string()).optional().default([]),
+  images: z.array(goatImageSchema).optional().default([]),
   videoUrl: z.string().optional().nullable().or(z.literal("")),
 });
 

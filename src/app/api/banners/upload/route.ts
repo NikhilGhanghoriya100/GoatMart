@@ -1,15 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getToken } from "next-auth/jwt";
-import { v2 as cloudinary } from "cloudinary";
+import cloudinary, { configureCloudinary } from "@/lib/cloudinary";
 import dbConnect from "@/lib/db";
 import Banner from "@/models/Banner";
-
-// Configure cloudinary explicitly here
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
 
 export async function POST(req: NextRequest) {
   try {
@@ -66,6 +59,7 @@ export async function POST(req: NextRequest) {
     console.log(`[Banner Upload] Uploading slide ${slideIndex} to Cloudinary...`);
 
     // Use cloudinary.uploader.upload (NOT upload_stream) with base64 — avoids stream hang
+    configureCloudinary();
     let uploadResult: any;
     try {
       uploadResult = await cloudinary.uploader.upload(base64, {
@@ -79,13 +73,17 @@ export async function POST(req: NextRequest) {
         timeout: 60000, // 60 second timeout
       });
     } catch (cloudErr: any) {
-      console.error("[Banner Upload] Cloudinary error:", cloudErr);
+      console.error("[Banner Upload] Cloudinary error:", {
+        message: cloudErr?.message,
+        http_code: cloudErr?.http_code,
+        name: cloudErr?.name,
+      });
       return NextResponse.json(
         {
           success: false,
-          error: `Cloudinary upload failed: ${cloudErr?.message || "Unknown error"}`,
+          error: "Image storage service unavailable",
         },
-        { status: 500 }
+        { status: 502 }
       );
     }
 

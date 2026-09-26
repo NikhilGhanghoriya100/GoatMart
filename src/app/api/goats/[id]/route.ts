@@ -18,6 +18,11 @@ import { z } from "zod";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+const goatImageSchema = z
+  .string()
+  .url("Image must be a valid HTTP/HTTPS URL")
+  .or(z.string().regex(/^data:image\//, "Legacy image data URI"));
+
 const updateGoatSchema = z.object({
   name: z.string().min(2).max(100).optional(),
   breed: z.enum(BREEDS as unknown as [string, ...string[]]).optional(),
@@ -30,7 +35,7 @@ const updateGoatSchema = z.object({
   vaccinated: z.boolean().optional(),
   tag: z.string().max(50).optional().nullable(),
   desc: z.string().min(10).max(2000).optional(),
-  images: z.array(z.string().url()).optional(),
+  images: z.array(goatImageSchema).optional(),
   videoUrl: z.string().url().optional().nullable().or(z.literal("")),
 });
 

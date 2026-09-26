@@ -77,20 +77,28 @@ export async function POST(req: NextRequest) {
       if (result && result.url) {
         return NextResponse.json({ success: true, data: result });
       }
-    } catch (cloudErr) {
-      console.warn("Cloudinary upload failed, using direct payload fallback:", cloudErr);
+    } catch (cloudErr: any) {
+      console.error("[Upload API] Cloudinary upload failed:", {
+        message: cloudErr?.message,
+        http_code: cloudErr?.http_code,
+        name: cloudErr?.name,
+      });
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Image storage service unavailable",
+        },
+        { status: 502 }
+      );
     }
 
-    // Direct local base64 fallback
-    return NextResponse.json({
-      success: true,
-      data: {
-        url: base64,
-        publicId: `upload_${Date.now()}`,
-        format: file.type.split("/")[1] || "jpeg",
-        resourceType: type,
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Image storage service unavailable",
       },
-    });
+      { status: 502 }
+    );
   } catch (error) {
     console.error("Upload failed:", error);
     return serverErrorResponse("File upload failed");
